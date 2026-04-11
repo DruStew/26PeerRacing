@@ -32,7 +32,7 @@ export function PacerAcceptButton({ entryId, eventId }: { entryId: string; event
       type="button"
       onClick={handleAccept}
       disabled={loading}
-      style={{ padding: "6px 12px", cursor: loading ? "wait" : "pointer" }}
+      className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#E87722]/90 disabled:cursor-wait disabled:opacity-70"
     >
       {loading ? "Accepting…" : "Accept as pacer"}
     </button>

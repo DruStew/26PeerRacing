@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isMembershipActive } from "@/lib/membership";
+import { isMembershipActive, type MembershipRow } from "@/lib/membership";
 
 /**
  * Accept a pacer request: set pacer_user_id = current user, pacer_status = 'accepted'.
@@ -24,11 +24,13 @@ export async function POST(
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("user_id,status,membership_start_at,membership_end_at")
+    .select(
+      "user_id,status,membership_start_at,membership_end_at,welcome_shown_at,renewal_count",
+    )
     .eq("user_id", user.id)
     .single();
 
-  if (!isMembershipActive(membership as { user_id: string; status: string; membership_start_at: string | null; membership_end_at: string | null } | null)) {
+  if (!isMembershipActive(membership as MembershipRow | null)) {
     return NextResponse.json(
       { ok: false, error: "Active membership required to act as a pacer", redirect: "/membership/renew" },
       { status: 403 },

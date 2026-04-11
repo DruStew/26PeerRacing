@@ -1,23 +1,46 @@
 import { NextResponse } from "next/server";
 
+import { insertRaceEntriesForUser, type RaceEntryPendingPayload } from "@/lib/race-entry/insert-entries";
+import { isProfileComplete, type ProfileRow } from "@/lib/profile";
+import { getStripe } from "@/lib/stripe/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isProfileComplete } from "@/lib/profile";
-import { isMembershipActive } from "@/lib/membership";
+import { isMembershipActive, type MembershipRow } from "@/lib/membership";
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
+type DistanceRow = {
+  id: string;
+  pr_cutoff?: string | null;
+  label?: string | null;
+  entry_fee_cents?: number | null;
+  is_peer_racing_qualifier?: boolean;
+  allow_roll_over_from_qualifier?: boolean;
+  allow_qualifier_split_to_roll_over_here?: boolean;
+};
+
+function computeEntryTotalCents(
+  primaryDistanceIds: string[],
+  rollOverSelections: { targetDistanceId: string; sourceDistanceId: string }[],
+  byId: Map<string, DistanceRow>,
+): number {
+  let total = 0;
+  for (const id of primaryDistanceIds) {
+    total += byId.get(id)?.entry_fee_cents ?? 0;
+  }
+  for (const r of rollOverSelections) {
+    total += byId.get(r.targetDistanceId)?.entry_fee_cents ?? 0;
+  }
+  return total;
+}
+
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id: eventId } = await context.params;
   const formData = await request.formData();
 
   const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json(
-      { ok: false, error: "You must be signed in to enter a race" },
-      { status: 401 },
-    );
+    return NextResponse.json({ ok: false, error: "You must be signed in to enter a race" }, { status: 401 });
   }
 
   const { data: profile } = await supabase
@@ -26,9 +49,12 @@ export async function POST(
     .eq("id", user.id)
     .single();
 
-  if (!isProfileComplete(profile as { first_name: string | null; last_name: string | null; dob: string | null; sex: string | null; email: string | null } | null)) {
+  if (!isProfileComplete(profile as ProfileRow | null)) {
     return NextResponse.json(
-      { ok: false, error: "Complete your profile before entering" },
+      {
+        ok: false,
+        error: "Complete your profile before entering, including a cell phone with at least 10 digits.",
+      },
       { status: 403 },
     );
   }
@@ -38,7 +64,7 @@ export async function POST(
     .select("user_id,status,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
     .eq("user_id", user.id)
     .single();
-  if (!isMembershipActive(membership as { user_id: string; status: string; membership_start_at: string | null; membership_end_at: string | null } | null)) {
+  if (!isMembershipActive(membership as MembershipRow | null)) {
     return NextResponse.json(
       { ok: false, error: "Active membership required", redirect: "/membership/renew" },
       { status: 403 },
@@ -52,60 +78,89 @@ export async function POST(
     .single();
 
   if (eventError || !event) {
-    return NextResponse.json(
-      { ok: false, error: "Event not found" },
-      { status: 404 },
-    );
+    return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
   }
 
   const eventCutoff = event.pr_cutoff ? new Date(event.pr_cutoff) : null;
-  const defaultCutoff =
-    eventCutoff && !Number.isNaN(eventCutoff.getTime()) ? eventCutoff : null;
+  const defaultCutoff = eventCutoff && !Number.isNaN(eventCutoff.getTime()) ? eventCutoff : null;
 
   const primaryDistanceIds = formData
     .getAll("enter_distance")
     .filter((v): v is string => typeof v === "string" && v.length > 0);
 
   if (primaryDistanceIds.length === 0) {
-    return NextResponse.json(
-      { ok: false, error: "Select at least one race to enter" },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: "Select at least one race to enter" }, { status: 400 });
   }
 
-  const { data: allDistances } = await supabase
+  const { data: allDistancesRaw } = await supabase
     .from("distances")
-    .select("id,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here")
+    .select(
+      "id,label,pr_cutoff,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here",
+    )
     .eq("event_id", eventId);
 
-  const distances = (allDistances ?? []).filter((d) => primaryDistanceIds.includes(d.id));
-  const validDistanceIds = new Set((allDistances ?? []).map((d) => d.id));
-  const qualifierId = (allDistances ?? []).find(
-    (d) => (d as { is_peer_racing_qualifier?: boolean }).is_peer_racing_qualifier && (d as { allow_roll_over_from_qualifier?: boolean }).allow_roll_over_from_qualifier,
+  const allDistances = (allDistancesRaw ?? []) as DistanceRow[];
+  const distById = new Map(allDistances.map((d) => [d.id, d]));
+
+  const distances = allDistances.filter((d) => primaryDistanceIds.includes(d.id));
+  const validDistanceIds = new Set(allDistances.map((d) => d.id));
+  const qualifierId = allDistances.find(
+    (d) => d.is_peer_racing_qualifier && d.allow_roll_over_from_qualifier,
   )?.id;
   const allowedRollOverTargets = new Set(
-    (allDistances ?? [])
-      .filter((d) => (d as { allow_qualifier_split_to_roll_over_here?: boolean }).allow_qualifier_split_to_roll_over_here)
-      .map((d) => d.id),
+    allDistances.filter((d) => d.allow_qualifier_split_to_roll_over_here).map((d) => d.id),
   );
+
+  const rollOverSelections: { targetDistanceId: string; sourceDistanceId: string }[] = [];
+  const rollOverActiveTargets = new Set<string>();
+  if (qualifierId) {
+    for (const [key, value] of formData.entries()) {
+      if (typeof value !== "string" || value !== "1") continue;
+      const m = key.match(/^roll_over_(.+)_from_(.+)$/);
+      if (!m) continue;
+      const [, targetId, sourceId] = m;
+      if (sourceId === qualifierId && allowedRollOverTargets.has(targetId)) {
+        rollOverActiveTargets.add(targetId);
+        rollOverSelections.push({ targetDistanceId: targetId, sourceDistanceId: sourceId });
+      }
+    }
+    for (const tid of rollOverActiveTargets) {
+      if (primaryDistanceIds.includes(tid)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "You cannot enter a race as a primary selection if you are using a qualifier roll-over into that same race. Choose one or the other.",
+          },
+          { status: 400 },
+        );
+      }
+    }
+    if (rollOverActiveTargets.size > 0 && !primaryDistanceIds.includes(qualifierId)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Select the Peer Racing Qualifier as a primary entry to use qualifier roll-over options.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const distanceCutoffs = new Map(
-    (allDistances ?? []).map((d) => [d.id, d.pr_cutoff ? new Date(d.pr_cutoff) : null]),
+    allDistances.map((d) => [d.id, d.pr_cutoff ? new Date(d.pr_cutoff) : null]),
   );
 
   const now = new Date();
   for (const did of primaryDistanceIds) {
     if (!validDistanceIds.has(did)) {
-      return NextResponse.json(
-        { ok: false, error: "Invalid distance for this event" },
-        { status: 400 },
-      );
+      return NextResponse.json({ ok: false, error: "Invalid distance for this event" }, { status: 400 });
     }
     const cutoff = distanceCutoffs.get(did) ?? defaultCutoff;
     if (cutoff != null && !Number.isNaN(cutoff.getTime()) && now > cutoff) {
-      return NextResponse.json(
-        { ok: false, error: "Entry cutoff has passed for one or more races" },
-        { status: 403 },
-      );
+      const closedUrl = new URL(`/events/${eventId}/entry-closed`, request.url);
+      return NextResponse.redirect(closedUrl, 303);
     }
   }
 
@@ -123,88 +178,131 @@ export async function POST(
     );
   }
 
-  const phoneVal = user.phone ?? (profile as { phone?: string })?.phone ?? user.email ?? "";
-  const firstName = (profile as { first_name?: string })?.first_name?.trim() ?? "";
-  const lastName = (profile as { last_name?: string })?.last_name?.trim() ?? "";
-  const email = (profile as { email?: string })?.email?.trim() ?? user.email ?? "";
-  const dob = (profile as { dob?: string })?.dob ?? "";
-  const sex = (profile as { sex?: string })?.sex ?? "";
+  const phoneVal =
+    (profile as { phone?: string })?.phone?.trim() || user.phone || user.email || "";
   const bib = String(formData.get("bib") ?? "").trim() || null;
 
-  const entryKind = "free";
-  const basePayload = {
-    event_id: eventId,
-    user_id: user.id,
-    first_name: firstName,
-    last_name: lastName,
-    phone: phoneVal,
-    email,
-    dob,
-    sex,
-    bib,
-    entry_kind: entryKind,
-    eligible: true,
-  };
+  const totalCents = computeEntryTotalCents(primaryDistanceIds, rollOverSelections, distById);
+  const stripe = getStripe();
 
-  const primaryEntryByDistance = new Map<string, { id: string; created_at: string }>();
+  if (stripe && totalCents > 0) {
+    const payload: RaceEntryPendingPayload = {
+      primaryDistanceIds,
+      rollOverSelections,
+      bib,
+    };
 
-  for (const distanceId of primaryDistanceIds) {
-    const dist = distances?.find((d) => d.id === distanceId);
-    const cutoffSnapshot = dist?.pr_cutoff ?? event.pr_cutoff;
-    const { data: entry, error: insertError } = await supabase
-      .from("entries")
+    const { data: pending, error: pendErr } = await supabase
+      .from("stripe_pending_race_entries")
       .insert({
-        ...basePayload,
-        distance_id: distanceId,
-        entry_type: "primary",
-        source_entry_id: null,
-        cutoff_snapshot: cutoffSnapshot ?? now.toISOString(),
+        user_id: user.id,
+        event_id: eventId,
+        payload,
       })
-      .select("id,created_at")
+      .select("id")
       .single();
 
-    if (insertError || !entry) {
+    if (pendErr || !pending) {
       return NextResponse.json(
-        { ok: false, error: insertError?.message ?? "Insert failed" },
+        { ok: false, error: pendErr?.message ?? "Could not start checkout" },
         { status: 400 },
       );
     }
-    primaryEntryByDistance.set(distanceId, { id: entry.id, created_at: entry.created_at });
-  }
 
-  for (const [key, value] of formData.entries()) {
-    if (typeof value !== "string" || value !== "1") continue;
-    const m = key.match(/^roll_over_(.+)_from_(.+)$/);
-    if (!m) continue;
-    const [, targetDistanceId, sourceDistanceId] = m;
-    if (sourceDistanceId !== qualifierId || !allowedRollOverTargets.has(targetDistanceId)) continue;
-    const sourceEntry = primaryEntryByDistance.get(sourceDistanceId);
-    if (!sourceEntry) continue;
+    const origin = new URL(request.url).origin;
+    const line_items: {
+      price_data: {
+        currency: "usd";
+        product_data: { name: string };
+        unit_amount: number;
+      };
+      quantity: number;
+    }[] = [];
 
-    const { data: existingRoll } = await supabase
-      .from("entries")
-      .select("id")
-      .eq("event_id", eventId)
-      .eq("user_id", user.id)
-      .eq("distance_id", targetDistanceId)
-      .maybeSingle();
-    if (existingRoll) continue;
+    for (const id of primaryDistanceIds) {
+      const d = distById.get(id);
+      const cents = d?.entry_fee_cents ?? 0;
+      if (cents <= 0) continue;
+      line_items.push({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `Entry — ${d?.label ?? "Race"}`,
+          },
+          unit_amount: cents,
+        },
+        quantity: 1,
+      });
+    }
+    for (const r of rollOverSelections) {
+      const d = distById.get(r.targetDistanceId);
+      const cents = d?.entry_fee_cents ?? 0;
+      if (cents <= 0) continue;
+      line_items.push({
+        price_data: {
+          currency: "usd",
+          product_data: {
+            name: `Roll-over — ${d?.label ?? "Race"}`,
+          },
+          unit_amount: cents,
+        },
+        quantity: 1,
+      });
+    }
 
-    const dist = allDistances?.find((d) => d.id === targetDistanceId);
-    const cutoffSnapshot = dist?.pr_cutoff ?? event.pr_cutoff;
-    await supabase.from("entries").insert({
-      ...basePayload,
-      distance_id: targetDistanceId,
-      entry_type: "roll_over",
-      source_entry_id: sourceEntry.id,
-      cutoff_snapshot: cutoffSnapshot ?? now.toISOString(),
+    if (line_items.length === 0) {
+      await supabase.from("stripe_pending_race_entries").delete().eq("id", pending.id);
+      return NextResponse.json(
+        { ok: false, error: "No paid line items — check distance entry fees." },
+        { status: 400 },
+      );
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer_email: user.email ?? undefined,
+      line_items,
+      success_url: `${origin}/events/${eventId}/enter?success=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/events/${eventId}/enter?canceled=1`,
+      metadata: {
+        checkout_kind: "race_entry",
+        pending_id: pending.id,
+        user_id: user.id,
+      },
     });
+
+    if (!session.url) {
+      await supabase.from("stripe_pending_race_entries").delete().eq("id", pending.id);
+      return NextResponse.json({ ok: false, error: "Checkout URL missing" }, { status: 500 });
+    }
+
+    return NextResponse.redirect(session.url, 303);
   }
 
-  const firstEntry = primaryEntryByDistance.get(primaryDistanceIds[0]!);
+  const insertResult = await insertRaceEntriesForUser(supabase, {
+    eventId,
+    userId: user.id,
+    profile: profile ?? {},
+    userPhoneFallback: user.phone ?? "",
+    userEmailFallback: user.email ?? "",
+    event,
+    allDistances,
+    primaryDistanceIds,
+    rollOverSelections,
+    qualifierId: qualifierId ?? null,
+    allowedRollOverTargets,
+    bib,
+    entryKind: "free",
+    paidAtIso: null,
+  });
+
+  if (!insertResult.ok) {
+    return NextResponse.json({ ok: false, error: insertResult.error }, { status: 400 });
+  }
+
   const redirectUrl = new URL(`/events/${eventId}/enter`, request.url);
   redirectUrl.searchParams.set("success", "1");
-  redirectUrl.searchParams.set("created_at", firstEntry?.created_at ?? "");
+  redirectUrl.searchParams.set("created_at", insertResult.firstCreatedAt);
 
   return NextResponse.redirect(redirectUrl, { status: 303 });
 }

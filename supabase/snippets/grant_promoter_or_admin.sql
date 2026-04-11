@@ -9,17 +9,17 @@
 -- or you temporarily grant yourself admin via a migration.
 -- =============================================================================
 
--- 1. Make yourself (or one user) an admin (run once; replace the UUID)
+-- If scope_event_id is NOT NULL in your DB, use a global sentinel (not tied to one event):
+--   '00000000-0000-0000-0000-000000000000'::uuid
+-- If the column allows NULL (original MVP), you can use null instead.
+-- If scope_event_id references events(id), you must use a real event id or fix the FK.
+
+-- 1. Make yourself (or one user) an admin (run once; replace YOUR_AUTH_USER_ID)
 -- insert into public.roles (user_id, role, scope_event_id)
--- values ('YOUR_AUTH_USER_ID', 'admin', null)
+-- values ('YOUR_AUTH_USER_ID', 'admin', '00000000-0000-0000-0000-000000000000'::uuid)
 -- on conflict (user_id, role, scope_event_id) do nothing;
 
--- 2. Make a user a promoter (run as an admin, or paste in SQL Editor; replace UUID)
+-- 2. Make a user a promoter (replace PROMOTER_AUTH_USER_ID)
 -- insert into public.roles (user_id, role, scope_event_id)
--- values ('PROMOTER_AUTH_USER_ID', 'promoter', null)
--- on conflict (user_id, role, scope_event_id) do nothing;
-
--- Example (uncomment and replace with real UUIDs):
--- insert into public.roles (user_id, role, scope_event_id)
--- values ('a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'admin', null)
+-- values ('PROMOTER_AUTH_USER_ID', 'promoter', '00000000-0000-0000-0000-000000000000'::uuid)
 -- on conflict (user_id, role, scope_event_id) do nothing;

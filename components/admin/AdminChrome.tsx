@@ -1,0 +1,44 @@
+import Link from "next/link";
+
+const nav = [
+  { name: "Dashboard", href: "/admin" },
+  { name: "Events", href: "/admin/events" },
+  { name: "Bulk import", href: "/admin/bulk-import" },
+  { name: "Members", href: "/admin/members" },
+  { name: "Communications", href: "/admin/comms" },
+] as const;
+
+export function AdminChrome({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
+      <header className="sticky top-0 z-50 border-b border-[#1E3A5F]/10 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/"
+              className="font-display text-lg font-bold tracking-tight text-[#1E3A5F] transition-colors hover:text-[#E87722]"
+            >
+              Peer Racing
+            </Link>
+            <span className="rounded-md bg-[#1E3A5F]/10 px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/80">
+              Admin
+            </span>
+          </div>
+          <nav className="flex flex-wrap gap-x-4 gap-y-2 text-sm font-medium">
+            {nav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="text-[#1E3A5F] transition-colors hover:text-[#E87722]"
+              >
+                {item.name}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </header>
+
+      {children}
+    </div>
+  );
+}
