@@ -4,6 +4,8 @@ export type RaceEntryPendingPayload = {
   primaryDistanceIds: string[];
   rollOverSelections: { targetDistanceId: string; sourceDistanceId: string }[];
   bib: string | null;
+  /** Cents to debit from wallet when Stripe checkout completes (remainder charged on Stripe). */
+  walletAppliedCents?: number;
 };
 
 type DistanceRow = {
@@ -97,6 +99,26 @@ export async function insertRaceEntriesForUser(
   const now = new Date();
   const primaryEntryByDistance = new Map<string, { id: string; created_at: string }>();
 
+  /** Roll-over targets may reference a qualifier primary that was entered earlier (not in this insert batch). */
+  const rollSources = new Set(rollOverSelections.map((r) => r.sourceDistanceId));
+  for (const sid of rollSources) {
+    if (primaryDistanceIds.includes(sid)) continue;
+    const { data: existingPrimary } = await supabase
+      .from("entries")
+      .select("id,created_at")
+      .eq("event_id", eventId)
+      .eq("user_id", userId)
+      .eq("distance_id", sid)
+      .eq("entry_type", "primary")
+      .maybeSingle();
+    if (existingPrimary) {
+      const row = existingPrimary as { id: string; created_at: string };
+      primaryEntryByDistance.set(sid, { id: row.id, created_at: row.created_at });
+    }
+  }
+
+  let lastCreatedAt = now.toISOString();
+
   for (const distanceId of primaryDistanceIds) {
     const dist = distances.find((d) => d.id === distanceId);
     const cutoffSnapshot = dist?.pr_cutoff ?? event.pr_cutoff;
@@ -108,6 +130,7 @@ export async function insertRaceEntriesForUser(
         entry_type: "primary",
         source_entry_id: null,
         cutoff_snapshot: cutoffSnapshot ?? now.toISOString(),
+        paid_amount_cents: paidAmountCentsForDistance(entryKind, dist),
       })
       .select("id,created_at")
       .single();
@@ -116,6 +139,7 @@ export async function insertRaceEntriesForUser(
       return { ok: false, error: insertError?.message ?? "Insert failed" };
     }
     primaryEntryByDistance.set(distanceId, { id: entry.id, created_at: entry.created_at });
+    lastCreatedAt = entry.created_at;
   }
 
   for (const { targetDistanceId, sourceDistanceId } of rollOverSelections) {
@@ -136,19 +160,23 @@ export async function insertRaceEntriesForUser(
 
     const dist = allDistances.find((d) => d.id === targetDistanceId);
     const cutoffSnapshot = dist?.pr_cutoff ?? event.pr_cutoff;
-    const { error: rollErr } = await supabase.from("entries").insert({
-      ...basePayload,
-      distance_id: targetDistanceId,
-      entry_type: "roll_over",
-      source_entry_id: sourceEntry.id,
-      cutoff_snapshot: cutoffSnapshot ?? now.toISOString(),
-      paid_amount_cents: paidAmountCentsForDistance(entryKind, dist),
-    });
+    const { data: rollIns, error: rollErr } = await supabase
+      .from("entries")
+      .insert({
+        ...basePayload,
+        distance_id: targetDistanceId,
+        entry_type: "roll_over",
+        source_entry_id: sourceEntry.id,
+        cutoff_snapshot: cutoffSnapshot ?? now.toISOString(),
+        paid_amount_cents: paidAmountCentsForDistance(entryKind, dist),
+      })
+      .select("created_at")
+      .single();
     if (rollErr) {
       return { ok: false, error: rollErr.message };
     }
+    if (rollIns?.created_at) lastCreatedAt = rollIns.created_at as string;
   }
 
-  const firstEntry = primaryEntryByDistance.get(primaryDistanceIds[0]!);
-  return { ok: true, firstCreatedAt: firstEntry?.created_at ?? now.toISOString() };
+  return { ok: true, firstCreatedAt: lastCreatedAt };
 }

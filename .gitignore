@@ -33,6 +33,15 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# Python
+__pycache__/
+*.py[cod]
+
+# 26_PR Program — credentials (never commit)
+26_PR Program/src/client_secret/
+26_PR Program/src/read_token.json
+26_PR Program/src/write_token.json
+
 # vercel
 .vercel
 

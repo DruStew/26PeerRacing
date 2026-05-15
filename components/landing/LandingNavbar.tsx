@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
-import { DEFAULT_PUBLIC_ROUTE, MY_ENTRIES_ROUTE, WALLET_ROUTE } from "@/lib/routes";
+import { DEFAULT_PUBLIC_ROUTE, KIOSK_ROUTE, MY_ENTRIES_ROUTE, WALLET_ROUTE } from "@/lib/routes";
 
 const publicNav = [
   { name: "Find a Race", href: DEFAULT_PUBLIC_ROUTE },
+  { name: "PR Kiosk", href: KIOSK_ROUTE },
   { name: "From Our Founder", href: "/#from-founder" },
   { name: "Host an Event", href: "/promoter" },
 ] as const;
@@ -83,7 +84,7 @@ export function LandingNavbar() {
 
   const navLinks = signedIn
     ? [...publicNav, myEntriesLink]
-    : [...publicNav.slice(0, 2), membershipLink, publicNav[2]];
+    : [...publicNav.slice(0, 3), membershipLink, publicNav[3]];
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#1E3A5F]/10 bg-white">

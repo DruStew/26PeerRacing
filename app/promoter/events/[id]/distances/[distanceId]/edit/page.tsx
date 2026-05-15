@@ -97,14 +97,14 @@ export default async function EditDistancePage({
     const pacerFeeDollarsRaw = formData.get("pacer_fee_dollars");
     const pacerFeeCents = (() => {
       if (pacerFeeDollarsRaw == null || String(pacerFeeDollarsRaw).trim() === "") return 0;
-      const d = parseFloat(String(pacerFeeDollarsRaw));
+      const d = parseFloat(String(pacerFeeDollarsRaw).replace(/[$,\s]/g, ""));
       if (Number.isNaN(d) || d < 0) return 0;
       return Math.round(d * 100);
     })();
     const entryFeeDollarsRaw = formData.get("entry_fee_dollars");
     const entryFeeCents = (() => {
       if (entryFeeDollarsRaw == null || String(entryFeeDollarsRaw).trim() === "") return 0;
-      const d = parseFloat(String(entryFeeDollarsRaw));
+      const d = parseFloat(String(entryFeeDollarsRaw).replace(/[$,\s]/g, ""));
       if (Number.isNaN(d) || d < 0) return 0;
       return Math.round(d * 100);
     })();
@@ -179,9 +179,9 @@ export default async function EditDistancePage({
               <input
                 id="entry_fee_dollars"
                 name="entry_fee_dollars"
-                type="number"
-                min={0}
-                step={0.01}
+                type="text"
+                inputMode="decimal"
+                autoComplete="off"
                 defaultValue={entryFeeDollarsDefault}
                 className={inputClass}
               />
@@ -307,12 +307,13 @@ export default async function EditDistancePage({
                 </label>
                 <input
                   id="pacer_fee_dollars"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
                   name="pacer_fee_dollars"
-                  min={0}
-                  defaultValue={
-                    ((distance as { pacer_fee_cents?: number }).pacer_fee_cents ?? 0) / 100
-                  }
+                  defaultValue={String(
+                    ((distance as { pacer_fee_cents?: number }).pacer_fee_cents ?? 0) / 100,
+                  )}
                   className={inputClass}
                 />
               </div>

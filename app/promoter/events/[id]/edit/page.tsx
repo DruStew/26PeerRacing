@@ -112,14 +112,14 @@ export default async function EditEventPage({
     const pacerFeeDollarsRaw = formData.get("pacer_fee_dollars");
     const pacerFeeCents = (() => {
       if (pacerFeeDollarsRaw == null || String(pacerFeeDollarsRaw).trim() === "") return 0;
-      const d = parseFloat(String(pacerFeeDollarsRaw));
+      const d = parseFloat(String(pacerFeeDollarsRaw).replace(/[$,\s]/g, ""));
       if (Number.isNaN(d) || d < 0) return 0;
       return Math.round(d * 100);
     })();
     const entryFeeDollarsRaw = formData.get("entry_fee_dollars");
     const entryFeeCents = (() => {
       if (entryFeeDollarsRaw == null || String(entryFeeDollarsRaw).trim() === "") return 0;
-      const d = parseFloat(String(entryFeeDollarsRaw));
+      const d = parseFloat(String(entryFeeDollarsRaw).replace(/[$,\s]/g, ""));
       if (Number.isNaN(d) || d < 0) return 0;
       return Math.round(d * 100);
     })();
@@ -209,12 +209,26 @@ export default async function EditEventPage({
               )}
             </div>
           </div>
-          <Link
-            href={`/events/${event.id}`}
-            className="inline-flex shrink-0 items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
-          >
-            View public page
-          </Link>
+          <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+            <Link
+              href={`/events/${event.id}`}
+              className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
+            >
+              View public page
+            </Link>
+            <Link
+              href={`/promoter/events/${id}/kiosk`}
+              className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#E87722]/90"
+            >
+              Race day kiosk
+            </Link>
+            <Link
+              href={`/promoter/events/${id}/payout`}
+              className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
+            >
+              Payout calculator
+            </Link>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 text-sm text-[#1E3A5F]/80 sm:grid-cols-2">
@@ -302,10 +316,10 @@ export default async function EditEventPage({
                 <input
                   id="entry_fee_dollars"
                   name="entry_fee_dollars"
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  defaultValue={0}
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  defaultValue="0"
                   className={inputClass}
                 />
               </div>
@@ -411,10 +425,11 @@ export default async function EditEventPage({
                   </label>
                   <input
                     id="pacer_fee_dollars"
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     name="pacer_fee_dollars"
-                    min={0}
-                    defaultValue={0}
+                    defaultValue="0"
                     className={inputClass}
                   />
                 </div>

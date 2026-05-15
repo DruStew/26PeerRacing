@@ -9,3 +9,6 @@ export const MY_ENTRIES_ROUTE = "/my-entries";
 
 /** Peer Racing wallet (credits, payouts, future bank transfer). */
 export const WALLET_ROUTE = "/wallet";
+
+/** Race-day kiosk entry (6-digit code from producer). */
+export const KIOSK_ROUTE = "/kiosk";

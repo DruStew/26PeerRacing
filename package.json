@@ -8,7 +8,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "import-fake-entries": "node scripts/import-fake-entries.mjs"
+    "import-fake-entries": "node scripts/import-fake-entries.mjs",
+    "db:login": "supabase login",
+    "db:link": "supabase link",
+    "db:push": "supabase db push",
+    "db:list": "supabase migration list",
+    "db:new": "supabase migration new"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
@@ -28,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "^8",
+    "supabase": "^2.98.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "xlsx": "^0.18.5"

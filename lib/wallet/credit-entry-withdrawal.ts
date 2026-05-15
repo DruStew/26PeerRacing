@@ -1,7 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { netWalletCreditFromGrossCents } from "@/lib/wallet/stripe-fee";
-
 type CreditArgs = {
   userId: string;
   entryId: string;
@@ -61,23 +59,16 @@ export async function insertWalletCreditForEntryWithdrawal(
     return { ok: true, creditedCents: 0 };
   }
 
-  const net = netWalletCreditFromGrossCents(gross);
-  if (net <= 0) {
-    return { ok: true, creditedCents: 0 };
-  }
-
-  const netInt = Math.round(Number(net));
+  const creditCents = Math.round(Number(gross));
 
   const modern = {
     user_id: args.userId,
-    amount_cents: netInt,
+    amount_cents: creditCents,
     category: "entry_withdrawal_credit",
     label: `Entry withdrawal — ${args.distanceLabel ?? "race"}`,
     metadata: {
       event_id: args.eventId,
-      gross_cents: gross,
-      estimated_stripe_fee_cents: gross - net,
-      fee_model: "us_card_2.9pct_plus_30c_estimate",
+      entry_fee_cents: gross,
     },
     related_entry_id: args.entryId,
   };
@@ -108,7 +99,7 @@ export async function insertWalletCreditForEntryWithdrawal(
 
     ({ error } = await db.from("wallet_ledger").insert({
       user_id: args.userId,
-      amount_cents: netInt,
+      amount_cents: creditCents,
       source: "entry_withdrawal_credit",
       ref_id: args.entryId,
     }));
@@ -121,5 +112,5 @@ export async function insertWalletCreditForEntryWithdrawal(
     return { ok: false, reason: error.message };
   }
 
-  return { ok: true, creditedCents: netInt };
+  return { ok: true, creditedCents: creditCents };
 }

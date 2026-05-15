@@ -6,7 +6,9 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isProfileComplete, type ProfileRow } from "@/lib/profile";
 import { requireActiveMembership, type MembershipRow } from "@/lib/membership";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
-import { MY_ENTRIES_ROUTE } from "@/lib/routes";
+import { MY_ENTRIES_ROUTE, WALLET_ROUTE } from "@/lib/routes";
+import { sumWalletBalanceCents } from "@/lib/wallet/balance";
+import { formatUsdFromCents } from "@/lib/wallet/format-money";
 import { RaceSelectionAndCart } from "./RaceSelectionAndCart";
 
 export default async function EnterEventPage({
@@ -47,7 +49,7 @@ export default async function EnterEventPage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id,first_name,last_name,dob,sex,phone,email")
+    .select("id,first_name,last_name,dob,sex,active_or_retired_military,phone,email")
     .eq("id", user.id)
     .single();
 
@@ -99,7 +101,10 @@ export default async function EnterEventPage({
 
   const hasPaidEntryFees = distances.some((d) => ((d as D).entry_fee_cents ?? 0) > 0);
 
+  const walletBalanceCents = await sumWalletBalanceCents(supabase, user.id);
+
   const showSuccess = resolvedSearchParams.success === "1";
+  const walletAfterEntryCents = showSuccess ? walletBalanceCents : null;
   const showCanceled = resolvedSearchParams.canceled === "1";
   const phoneDisplay =
     (profile as { phone?: string } | null)?.phone?.trim() ||
@@ -155,9 +160,12 @@ export default async function EnterEventPage({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h2 className="font-display mt-4 text-xl font-semibold text-[#1E3A5F]">You&apos;re Entered</h2>
+              <h2 className="font-display mt-4 text-xl font-semibold text-[#1E3A5F]">You&apos;re entered</h2>
               <p className="mt-2 text-sm text-[#1E3A5F]/70">
-                Created at: {resolvedSearchParams.created_at ?? "—"}
+                Registered at: {resolvedSearchParams.created_at ?? "—"}
+              </p>
+              <p className="mt-3 text-sm font-medium text-[#1E3A5F]">
+                Wallet balance: {formatUsdFromCents(walletBalanceCents)}
               </p>
               <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:items-start">
                 <Link
@@ -170,7 +178,13 @@ export default async function EnterEventPage({
                   href={MY_ENTRIES_ROUTE}
                   className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/25 px-6 py-3 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
                 >
-                  View My Entries
+                  My entries
+                </Link>
+                <Link
+                  href={WALLET_ROUTE}
+                  className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/25 px-6 py-3 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
+                >
+                  Wallet
                 </Link>
               </div>
             </div>
@@ -204,6 +218,7 @@ export default async function EnterEventPage({
                       .filter((d) => (d as { gun_time?: string }).gun_time)
                       .map((d) => [d.id, new Date((d as { gun_time?: string }).gun_time!).toLocaleString()])
                   )}
+                  walletBalanceCents={walletBalanceCents}
                 />
               </fieldset>
             )}
@@ -220,7 +235,7 @@ export default async function EnterEventPage({
                 type="submit"
                 className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#E87722]/90"
               >
-                {hasPaidEntryFees ? "Continue to payment" : "Submit entry"}
+                {hasPaidEntryFees ? "Continue" : "Submit entry"}
               </button>
               <Link
                 href={`/events/${event.id}`}

@@ -241,6 +241,7 @@ export default async function MyEntriesPage() {
                             <div className="shrink-0 sm:max-w-xs sm:text-right">
                               <WithdrawEntryButton
                                 entryId={entry.id}
+                                distanceLabel={dist?.label?.trim() ?? ""}
                                 disabled={!open}
                                 hasLinkedRollOvers={hasLinkedRollOvers}
                               />

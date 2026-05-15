@@ -1,6 +1,6 @@
 /**
  * Profile completion: required before entering a race.
- * Required: first_name, last_name, dob, sex, phone, email.
+ * Required: first_name, last_name, dob, sex, active_or_retired_military, phone, email.
  * Phone is stored on profiles (cell); may also exist on auth user for OTP login.
  */
 export type ProfileRow = {
@@ -9,6 +9,8 @@ export type ProfileRow = {
   last_name: string | null;
   dob: string | null;
   sex: string | null;
+  /** Active or retired military (self-reported); used for military incentive payouts. */
+  active_or_retired_military: boolean | null;
   phone: string | null;
   email: string | null;
   /** Optional; for local race marketing. */
@@ -34,11 +36,14 @@ export function isProfileComplete(profile: ProfileRow | null): boolean {
   const phone = (profile.phone ?? "").trim();
   const hasDob = profile.dob != null && String(profile.dob).trim() !== "";
   const hasSex = profile.sex === "male" || profile.sex === "female";
+  const hasMilitary =
+    profile.active_or_retired_military === true || profile.active_or_retired_military === false;
   return (
     first.length > 0 &&
     last.length > 0 &&
     hasDob &&
     hasSex &&
+    hasMilitary &&
     email.length > 0 &&
     isPlausibleCellPhone(phone)
   );
@@ -49,6 +54,7 @@ export const PROFILE_REQUIRED_FIELDS = [
   "Last name",
   "Date of birth",
   "Sex",
+  "Active or retired military",
   "Email",
   "Cell phone",
 ] as const;

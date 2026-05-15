@@ -34,7 +34,7 @@ function parseEntryId(raw: { entryId?: string | string[] }): string | null {
 
 /**
  * Withdraw from a single entry (one distance) while registration is open.
- * Paid entries: net wallet credit (gross less estimated Stripe fee), then row delete.
+ * Paid entries: wallet credit for the full paid entry amount, then row delete.
  * Requires SUPABASE_SERVICE_ROLE_KEY for paid rows (wallet credit + delete bypass if needed).
  */
 export async function POST(

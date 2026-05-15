@@ -162,6 +162,7 @@ export async function POST(request: Request) {
         entriesSkippedAlreadyRegistered: 0,
         entriesSkippedDuplicateInFile: 0,
         uniqueRegistrationKeysInFile: 0,
+        entriesTranspondersUpdated: 0,
       },
       rowErrors: validationErrors,
     });

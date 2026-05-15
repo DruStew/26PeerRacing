@@ -1,0 +1,82 @@
+{
+  "input_path": "C:\\Users\\drujs\\Downloads\\Race Results to Uplaod - Input.csv",
+  "output_path": null,
+  "input_sheet_id": "1WO3Ji6fIyP8_bfo-W5-mvtaGa8s8N4Epnn6vUDwH-MI",
+  "output_sheet_id": "1AmKGfhJBqDMXyGFM8d0iQZAnWTaomdtfUNNu43Mjoik",
+  "refresh_rate_s": 30,
+  "indices": {
+    "id": 0,
+    "bib": 1,
+    "first": 2,
+    "last": 3,
+    "age": 4,
+    "sex": 5,
+    "time": 6,
+    "overall_rank": 7,
+    "peer_racing_rank": 8,
+    "military": -1
+  },
+  "divisions": {
+    "max_percentile": 95,
+    "min_percentile": 5,
+    "divisions": 5,
+    "segregate": 0,
+    "auto_set_divisions": true,
+    "payout_slots": 12
+  },
+  "d1_adjustment": 1000,
+  "time_fstr": "%H:%M:%S.%f",
+  "png": true,
+  "png_path": "./.test.png",
+  "total_purse": 5000,
+  "processing_fee_pct": 4,
+  "pr_holding_pct": 50,
+  "promoter_split_pct": 50,
+  "added_money": 0,
+  "entry_fee": 90,
+  "total_runners": 234,
+  "incentive_division1": {
+    "type": "off",
+    "value": 1000,
+    "payout_slots": 5,
+    "divisions": 1,
+    "criteria": [
+      "under",
+      30
+    ],
+    "png_path": "./.incentive_division1.png"
+  },
+  "incentive_division2": {
+    "type": "fixed",
+    "value": 1000,
+    "payout_slots": 2,
+    "divisions": 4,
+    "criteria": [
+      "over",
+      50
+    ],
+    "png_path": "./.incentive_division2.png"
+  },
+  "incentive_division3": {
+    "type": "off",
+    "value": 1000,
+    "payout_slots": 5,
+    "divisions": 1,
+    "criteria": "military",
+    "png_path": "./.incentive_division3.png"
+  },
+  "show_unpaid_runners": false,
+  "window": {
+    "width": 1152,
+    "height": 684,
+    "x": 606,
+    "y": 170,
+    "maximized": false
+  },
+  "initial_file_search_path": "C:\\Users\\drujs\\Downloads",
+  "import_mode": "csv",
+  "export_mode": "csv",
+  "csv_export_dir": "race_results",
+  "run_on_start": false,
+  "export_results": true
+}

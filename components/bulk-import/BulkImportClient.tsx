@@ -22,6 +22,7 @@ type ApiSummary = {
   entriesSkippedAlreadyRegistered: number;
   entriesSkippedDuplicateInFile: number;
   uniqueRegistrationKeysInFile: number;
+  entriesTranspondersUpdated: number;
 };
 
 type ApiResponse = {
@@ -136,7 +137,15 @@ export function BulkImportClient({
           Optional: <code className="rounded bg-[#1E3A5F]/10 px-1">distance_id</code> (UUID from your
           database), <code className="rounded bg-[#1E3A5F]/10 px-1">bib</code>,{" "}
           <code className="rounded bg-[#1E3A5F]/10 px-1">event_id</code> (must match the event you
-          select — or omit it).
+          select — or omit it),{" "}
+          <code className="rounded bg-[#1E3A5F]/10 px-1">military</code> (y/n or yes/no for active or
+          retired military; defaults to no),{" "}
+          <code className="rounded bg-[#1E3A5F]/10 px-1">transponder_1</code> /{" "}
+          <code className="rounded bg-[#1E3A5F]/10 px-1">transponder_2</code> (or{" "}
+          <code className="rounded bg-[#1E3A5F]/10 px-1">Transponder1</code> /{" "}
+          <code className="rounded bg-[#1E3A5F]/10 px-1">Transponder2</code>) for Race Result RFID
+          handoff — stored on new inserts and applied to existing entries when email + distance
+          match.
         </p>
         <p className="mt-2 text-[#1E3A5F]/70">
           If every row uses the same distance, pick a <strong>default distance</strong> below and
@@ -265,6 +274,10 @@ export function BulkImportClient({
             </li>
             <li>
               Skipped (duplicate lines in this file): {result.summary.entriesSkippedDuplicateInFile}
+            </li>
+            <li>
+              Transponder fields updated (existing entries, RR CSV):{" "}
+              {result.summary.entriesTranspondersUpdated}
             </li>
           </ul>
           {result.summary.entriesInserted === 0 &&

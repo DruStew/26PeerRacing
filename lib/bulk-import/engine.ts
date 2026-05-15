@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { batchResolveAuthUserIdsByEmail } from "./auth-lookup";
-import { digitsPhone, formatDob, mapSex, normEmail } from "./helpers";
+import { digitsPhone, formatDob, mapActiveOrRetiredMilitary, mapSex, normEmail } from "./helpers";
 
 export const BULK_IMPORT_MAX_ROWS = 5000;
 const PROFILE_CHUNK = 250;
@@ -18,8 +18,12 @@ export type PreparedRow = {
   phoneDigits: string;
   dob: string;
   sex: "male" | "female";
+  active_or_retired_military: boolean;
   distance_id: string;
   bib: string | null;
+  /** Race Result Transponder1 / Transponder2; optional bulk import from RR CSV */
+  transponder_1: string | null;
+  transponder_2: string | null;
 };
 
 export type BulkImportResult = {
@@ -38,6 +42,8 @@ export type BulkImportResult = {
     entriesSkippedDuplicateInFile: number;
     /** Distinct (user, distance) pairs in the file after resolving emails (for spotting repeated lines). */
     uniqueRegistrationKeysInFile: number;
+    /** Existing entries updated with transponder_1 / transponder_2 from CSV (RR handoff). */
+    entriesTranspondersUpdated: number;
   };
   rowErrors: Array<{ row: number; message: string }>;
 };
@@ -93,6 +99,14 @@ export function prepareRowsFromCsv(
     const distRaw = r.distance_id ?? r.distanceId ?? r.DistanceId ?? "";
     const distance_id = String(distRaw).trim() || (defaultDistanceId ?? "");
     const bibRaw = r.bib ?? r.Bib ?? "";
+    const tp1Raw = r.transponder_1 ?? r.Transponder1 ?? r.transponder1 ?? "";
+    const tp2Raw = r.transponder_2 ?? r.Transponder2 ?? r.transponder2 ?? "";
+    const transponder_1 =
+      tp1Raw === "" || tp1Raw == null ? null : String(tp1Raw).trim();
+    const transponder_2 =
+      tp2Raw === "" || tp2Raw == null ? null : String(tp2Raw).trim();
+    const militaryCol =
+      r.military ?? r.Military ?? r.active_or_retired_military ?? r.activeOrRetiredMilitary;
 
     if (!emailNorm || !emailNorm.includes("@")) {
       rowErrors.push({ row: rowNum, message: "Invalid or missing email" });
@@ -143,8 +157,11 @@ export function prepareRowsFromCsv(
       phoneDigits,
       dob,
       sex,
+      active_or_retired_military: mapActiveOrRetiredMilitary(militaryCol),
       distance_id,
       bib: bibRaw === "" || bibRaw == null ? null : String(bibRaw).trim(),
+      transponder_1,
+      transponder_2,
     });
   }
 
@@ -184,6 +201,7 @@ export async function runBulkImport(
           entriesSkippedAlreadyRegistered: 0,
           entriesSkippedDuplicateInFile: 0,
           uniqueRegistrationKeysInFile: 0,
+          entriesTranspondersUpdated: 0,
         },
         rowErrors: [{ row: 0, message: `Profile lookup failed: ${error.message}` }],
       };
@@ -211,6 +229,7 @@ export async function runBulkImport(
           entriesSkippedAlreadyRegistered: 0,
           entriesSkippedDuplicateInFile: 0,
           uniqueRegistrationKeysInFile: 0,
+          entriesTranspondersUpdated: 0,
         },
         rowErrors: [{ row: 0, message: authLookup.message }],
       };
@@ -270,6 +289,7 @@ export async function runBulkImport(
           entriesSkippedAlreadyRegistered: 0,
           entriesSkippedDuplicateInFile: 0,
           uniqueRegistrationKeysInFile: 0,
+          entriesTranspondersUpdated: 0,
         },
         rowErrors: [{ row: 0, message: dupLookup.message }],
       };
@@ -313,6 +333,7 @@ export async function runBulkImport(
       phone: sample.phoneDigits,
       dob: sample.dob,
       sex: sample.sex,
+      active_or_retired_military: sample.active_or_retired_military,
     }));
 
   let profilesUpserted = 0;
@@ -334,6 +355,7 @@ export async function runBulkImport(
           entriesSkippedAlreadyRegistered: 0,
           entriesSkippedDuplicateInFile: 0,
           uniqueRegistrationKeysInFile: 0,
+          entriesTranspondersUpdated: 0,
         },
         rowErrors,
       };
@@ -370,6 +392,7 @@ export async function runBulkImport(
           entriesSkippedAlreadyRegistered: 0,
           entriesSkippedDuplicateInFile: 0,
           uniqueRegistrationKeysInFile: 0,
+          entriesTranspondersUpdated: 0,
         },
         rowErrors,
       };
@@ -407,6 +430,8 @@ export async function runBulkImport(
     dob: string;
     sex: string;
     bib: string | null;
+    transponder_1: string | null;
+    transponder_2: string | null;
     entry_kind: string;
     entry_type: string;
     source_entry_id: null;
@@ -442,6 +467,8 @@ export async function runBulkImport(
       dob: pr.dob,
       sex: pr.sex,
       bib: pr.bib,
+      transponder_1: pr.transponder_1,
+      transponder_2: pr.transponder_2,
       entry_kind: "free",
       entry_type: "primary",
       source_entry_id: null,
@@ -471,6 +498,28 @@ export async function runBulkImport(
     }
   }
 
+  let entriesTranspondersUpdated = 0;
+  for (const pr of prepared) {
+    if (pr.transponder_1 == null && pr.transponder_2 == null) continue;
+    const userId = emailToUserId.get(pr.emailNorm);
+    if (!userId) continue;
+    if (!existingInDb.has(`${userId}|${pr.distance_id}`)) continue;
+    const { error: upErr } = await service
+      .from("entries")
+      .update({
+        transponder_1: pr.transponder_1,
+        transponder_2: pr.transponder_2,
+      })
+      .eq("event_id", eventId)
+      .eq("user_id", userId)
+      .eq("distance_id", pr.distance_id);
+    if (!upErr) {
+      entriesTranspondersUpdated += 1;
+    } else {
+      rowErrors.push({ row: pr.rowIndex, message: `Transponder update: ${upErr.message}` });
+    }
+  }
+
   const uniqueRegistrationKeysInFile = (() => {
     const s = new Set<string>();
     for (const pr of prepared) {
@@ -495,6 +544,7 @@ export async function runBulkImport(
       entriesSkippedAlreadyRegistered,
       entriesSkippedDuplicateInFile,
       uniqueRegistrationKeysInFile,
+      entriesTranspondersUpdated,
     },
     rowErrors,
   };

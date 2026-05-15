@@ -20,6 +20,7 @@ export function ProfileCompleteForm({
     last_name: string;
     dob: string;
     sex: string;
+    active_or_retired_military: boolean | null;
     email: string;
     phone: string;
     hometown: string;
@@ -33,6 +34,9 @@ export function ProfileCompleteForm({
   const [last_name, setLast_name] = useState(initial.last_name);
   const [dob, setDob] = useState(initial.dob);
   const [sex, setSex] = useState(initial.sex);
+  const [activeOrRetiredMilitary, setActiveOrRetiredMilitary] = useState<"" | "yes" | "no">(
+    initial.active_or_retired_military === true ? "yes" : initial.active_or_retired_military === false ? "no" : "",
+  );
   const [email, setEmail] = useState(initial.email);
   const [phone, setPhone] = useState(initial.phone);
   const [hometown, setHometown] = useState(initial.hometown);
@@ -52,6 +56,11 @@ export function ProfileCompleteForm({
       );
       return;
     }
+    if (activeOrRetiredMilitary !== "yes" && activeOrRetiredMilitary !== "no") {
+      setStatus("error");
+      setError('Select "Yes" or "No" for active or retired military.');
+      return;
+    }
     setStatus("loading");
     const supabase = createClient();
     const { error: upsertError } = await supabase.from("profiles").upsert(
@@ -61,6 +70,7 @@ export function ProfileCompleteForm({
         last_name: last_name.trim(),
         dob: dob.trim() || null,
         sex: sex === "male" || sex === "female" ? sex : null,
+        active_or_retired_military: activeOrRetiredMilitary === "yes",
         email: email.trim() || null,
         phone: phoneTrimmed,
         hometown: hometown.trim() || null,
@@ -177,6 +187,26 @@ export function ProfileCompleteForm({
             <option value="male">Male</option>
             <option value="female">Female</option>
           </select>
+        </div>
+        <div>
+          <label htmlFor="active_or_retired_military" className="text-sm font-medium text-[#1E3A5F]">
+            Active or retired military
+          </label>
+          <select
+            id="active_or_retired_military"
+            name="active_or_retired_military"
+            required
+            value={activeOrRetiredMilitary}
+            onChange={(e) => setActiveOrRetiredMilitary(e.target.value as "" | "yes" | "no")}
+            className={`${inputClass} cursor-pointer`}
+          >
+            <option value="">Select</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+          <p className="mt-1.5 text-xs leading-relaxed text-[#1E3A5F]/60">
+            Used for race operations and optional military division or incentive payouts. Self-reported.
+          </p>
         </div>
 
         <div className="border-t border-[#1E3A5F]/10 pt-5">

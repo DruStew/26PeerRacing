@@ -12,6 +12,7 @@ export function RaceSelectionAndCart({
   qualifierLabel,
   rollOverTargets,
   gunTimes,
+  walletBalanceCents = 0,
 }: {
   formId: string;
   distances: DistanceItem[];
@@ -19,9 +20,12 @@ export function RaceSelectionAndCart({
   qualifierLabel: string;
   rollOverTargets: DistanceItem[];
   gunTimes: Record<string, string>;
+  /** Current wallet balance; used to apply credit before Stripe. */
+  walletBalanceCents?: number;
 }) {
   const [lineItems, setLineItems] = useState<CartLine[]>([]);
   const [totalCents, setTotalCents] = useState(0);
+  const [applyWallet, setApplyWallet] = useState(true);
 
   const syncRollOverPrimaryExclusion = useCallback(() => {
     if (!qualifierId || rollOverTargets.length === 0) return;
@@ -201,6 +205,50 @@ export function RaceSelectionAndCart({
             <span>Total entry fee</span>
             <span>{feeStr(totalCents)}</span>
           </div>
+
+          {totalCents > 0 && walletBalanceCents > 0 ? (
+            <div className="mt-4 border-t border-[#1E3A5F]/10 pt-4">
+              <p className="text-sm text-[#1E3A5F]">
+                Wallet: <span className="font-semibold">{feeStr(walletBalanceCents)}</span>
+              </p>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-[#1E3A5F]">
+                <input
+                  type="checkbox"
+                  name="use_wallet"
+                  value="1"
+                  checked={applyWallet}
+                  onChange={(e) => setApplyWallet(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#1E3A5F]/30 text-[#E87722] focus:ring-[#E87722]"
+                />
+                <span>Use wallet toward this entry</span>
+              </label>
+              {applyWallet ? (
+                <div className="mt-3 space-y-1.5 rounded-lg bg-[#1E3A5F]/5 px-3 py-2.5 text-sm text-[#1E3A5F]/90">
+                  {(() => {
+                    const fromWallet = Math.min(walletBalanceCents, totalCents);
+                    const cardDue = Math.max(0, totalCents - fromWallet);
+                    return (
+                      <>
+                        <div className="flex justify-between gap-4">
+                          <span>Wallet</span>
+                          <span className="font-medium tabular-nums">−{feeStr(fromWallet)}</span>
+                        </div>
+                        <div className="flex justify-between gap-4 font-semibold">
+                          <span>Pay by card</span>
+                          <span className="tabular-nums">{feeStr(cardDue)}</span>
+                        </div>
+                        {cardDue === 0 ? (
+                          <p className="pt-1 text-xs font-normal text-emerald-800">Entry fully covered — no card charge.</p>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-[#1E3A5F]/60">Pay the full entry fee by card.</p>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
     </>

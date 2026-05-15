@@ -24,7 +24,7 @@ export default async function ProfileCompletePage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id,first_name,last_name,dob,sex,phone,email,hometown,home_state,zip")
+    .select("id,first_name,last_name,dob,sex,active_or_retired_military,phone,email,hometown,home_state,zip")
     .eq("id", user.id)
     .single();
 
@@ -47,9 +47,9 @@ export default async function ProfileCompletePage({
         </h1>
         <p className="mt-3 text-pretty text-[#1E3A5F]/75">
           Keep your details current. We need your legal name, email, cell phone (at least 10
-          digits, including area code), date of birth, and sex for race entry and results. Your
-          cell number helps us reach you on race day and will support future text or push
-          notifications.
+          digits, including area code), date of birth, sex, and active or retired military status
+          for race entry, results, and optional payouts. Your cell number helps us reach you on
+          race day and will support future text or push notifications.
         </p>
 
         <ProfileCompleteForm
@@ -59,6 +59,9 @@ export default async function ProfileCompletePage({
             last_name: profile?.last_name ?? "",
             dob: profile?.dob ?? "",
             sex: profile?.sex ?? "",
+            active_or_retired_military:
+              (profile as { active_or_retired_military?: boolean | null } | null)?.active_or_retired_military ??
+              null,
             email: profile?.email ?? user.email ?? "",
             phone: phoneInitial,
             hometown: profile?.hometown ?? "",

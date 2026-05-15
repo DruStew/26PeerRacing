@@ -3,8 +3,11 @@ import { NextResponse } from "next/server";
 import { insertRaceEntriesForUser, type RaceEntryPendingPayload } from "@/lib/race-entry/insert-entries";
 import { isProfileComplete, type ProfileRow } from "@/lib/profile";
 import { getStripe } from "@/lib/stripe/server";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isMembershipActive, type MembershipRow } from "@/lib/membership";
+import { sumWalletBalanceCents } from "@/lib/wallet/balance";
+import { walletApplyDebitForRaceEntry, walletCreditAdjustment } from "@/lib/wallet/wallet-race-entry";
 
 type DistanceRow = {
   id: string;
@@ -45,7 +48,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id,first_name,last_name,dob,sex,phone,email")
+    .select("id,first_name,last_name,dob,sex,active_or_retired_military,phone,email")
     .eq("id", user.id)
     .single();
 
@@ -53,7 +56,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json(
       {
         ok: false,
-        error: "Complete your profile before entering, including a cell phone with at least 10 digits.",
+        error:
+          "Complete your profile before entering, including sex, active or retired military, and a cell phone with at least 10 digits.",
       },
       { status: 403 },
     );
@@ -73,7 +77,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id,pr_cutoff,promoter_id")
+    .select("id,pr_cutoff,promoter_id,name")
     .eq("id", eventId)
     .single();
 
@@ -185,11 +189,86 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const totalCents = computeEntryTotalCents(primaryDistanceIds, rollOverSelections, distById);
   const stripe = getStripe();
 
-  if (stripe && totalCents > 0) {
+  const useWallet = formData.get("use_wallet") === "1";
+  const walletBalance = await sumWalletBalanceCents(supabase, user.id);
+  const walletApplied =
+    useWallet && walletBalance > 0 && totalCents > 0 ? Math.min(walletBalance, totalCents) : 0;
+  const cardDueCents = totalCents - walletApplied;
+
+  const eventNameDisplay = (event as { name?: string | null }).name ?? "Race";
+
+  if (totalCents > 0 && cardDueCents === 0) {
+    const admin = createServiceRoleSupabaseClient();
+    if (!admin) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Server wallet payment is not configured (SUPABASE_SERVICE_ROLE_KEY).",
+        },
+        { status: 503 },
+      );
+    }
+
+    const debit = await walletApplyDebitForRaceEntry(admin, {
+      userId: user.id,
+      amountCents: totalCents,
+      eventId,
+      eventName: eventNameDisplay,
+    });
+    if (!debit.ok) {
+      return NextResponse.json({ ok: false, error: debit.message }, { status: 400 });
+    }
+
+    const paidAtIso = new Date().toISOString();
+    const paidInsert = await insertRaceEntriesForUser(supabase, {
+      eventId,
+      userId: user.id,
+      profile: profile ?? {},
+      userPhoneFallback: user.phone ?? "",
+      userEmailFallback: user.email ?? "",
+      event,
+      allDistances,
+      primaryDistanceIds,
+      rollOverSelections,
+      qualifierId: qualifierId ?? null,
+      allowedRollOverTargets,
+      bib,
+      entryKind: "paid",
+      paidAtIso,
+    });
+
+    if (!paidInsert.ok) {
+      await walletCreditAdjustment(admin, {
+        userId: user.id,
+        amountCents: totalCents,
+        label: "Reversal: race entry could not be created",
+        metadata: { event_id: eventId },
+      });
+      return NextResponse.json({ ok: false, error: paidInsert.error }, { status: 400 });
+    }
+
+    const redirectPaid = new URL(`/events/${eventId}/enter`, request.url);
+    redirectPaid.searchParams.set("success", "1");
+    redirectPaid.searchParams.set("created_at", paidInsert.firstCreatedAt);
+    return NextResponse.redirect(redirectPaid, { status: 303 });
+  }
+
+  if (totalCents > 0 && cardDueCents > 0 && !stripe) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Card payment isn’t set up (Stripe keys), or your wallet doesn’t cover the full fee.",
+      },
+      { status: 503 },
+    );
+  }
+
+  if (stripe && totalCents > 0 && cardDueCents > 0) {
     const payload: RaceEntryPendingPayload = {
       primaryDistanceIds,
       rollOverSelections,
       bib,
+      walletAppliedCents: walletApplied,
     };
 
     const { data: pending, error: pendErr } = await supabase
@@ -217,46 +296,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         unit_amount: number;
       };
       quantity: number;
-    }[] = [];
-
-    for (const id of primaryDistanceIds) {
-      const d = distById.get(id);
-      const cents = d?.entry_fee_cents ?? 0;
-      if (cents <= 0) continue;
-      line_items.push({
+    }[] = [
+      {
         price_data: {
           currency: "usd",
           product_data: {
-            name: `Entry — ${d?.label ?? "Race"}`,
+            name: `${eventNameDisplay} — entry`,
           },
-          unit_amount: cents,
+          unit_amount: cardDueCents,
         },
         quantity: 1,
-      });
-    }
-    for (const r of rollOverSelections) {
-      const d = distById.get(r.targetDistanceId);
-      const cents = d?.entry_fee_cents ?? 0;
-      if (cents <= 0) continue;
-      line_items.push({
-        price_data: {
-          currency: "usd",
-          product_data: {
-            name: `Roll-over — ${d?.label ?? "Race"}`,
-          },
-          unit_amount: cents,
-        },
-        quantity: 1,
-      });
-    }
-
-    if (line_items.length === 0) {
-      await supabase.from("stripe_pending_race_entries").delete().eq("id", pending.id);
-      return NextResponse.json(
-        { ok: false, error: "No paid line items — check distance entry fees." },
-        { status: 400 },
-      );
-    }
+      },
+    ];
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",

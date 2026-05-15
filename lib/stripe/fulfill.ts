@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { insertRaceEntriesForUser, type RaceEntryPendingPayload } from "@/lib/race-entry/insert-entries";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 import { getStripe } from "@/lib/stripe/server";
+import { walletApplyDebitForRaceEntry } from "@/lib/wallet/wallet-race-entry";
 
 /**
  * Idempotent: extend membership after successful Checkout (membership checkout).
@@ -88,7 +89,7 @@ export async function fulfillRaceEntryFromSession(session: Stripe.Checkout.Sessi
 
   const { data: pending, error: pErr } = await service
     .from("stripe_pending_race_entries")
-    .select("id,user_id,event_id,payload,fulfilled_at")
+    .select("id,user_id,event_id,payload,fulfilled_at,wallet_debit_completed_at")
     .eq("id", pendingId)
     .maybeSingle();
 
@@ -100,10 +101,11 @@ export async function fulfillRaceEntryFromSession(session: Stripe.Checkout.Sessi
   if (session.metadata?.user_id !== userId) return { ok: false, error: "User mismatch" };
 
   const payload = pending.payload as RaceEntryPendingPayload;
+  const walletAppliedCents = Math.max(0, Math.round(Number(payload.walletAppliedCents ?? 0)));
 
   const { data: profile } = await service
     .from("profiles")
-    .select("first_name,last_name,dob,sex,phone,email")
+    .select("first_name,last_name,dob,sex,active_or_retired_military,phone,email")
     .eq("id", userId)
     .single();
 
@@ -111,11 +113,39 @@ export async function fulfillRaceEntryFromSession(session: Stripe.Checkout.Sessi
 
   const { data: event } = await service
     .from("events")
-    .select("id,pr_cutoff")
+    .select("id,pr_cutoff,name")
     .eq("id", eventId)
     .single();
 
   if (!event) return { ok: false, error: "Event missing" };
+
+  if (
+    walletAppliedCents > 0 &&
+    !(pending as { wallet_debit_completed_at?: string | null }).wallet_debit_completed_at
+  ) {
+    const debit = await walletApplyDebitForRaceEntry(service, {
+      userId,
+      amountCents: walletAppliedCents,
+      eventId,
+      eventName: (event as { name?: string }).name ?? "Race",
+      metadata: { stripe_pending_race_id: pendingId },
+    });
+    if (!debit.ok) {
+      try {
+        const pi = session.payment_intent;
+        const piId = typeof pi === "string" ? pi : pi?.id ?? null;
+        if (piId) await stripe.refunds.create({ payment_intent: piId });
+      } catch {
+        /* logged by caller */
+      }
+      return { ok: false, error: debit.message };
+    }
+    const nowIso = new Date().toISOString();
+    await service
+      .from("stripe_pending_race_entries")
+      .update({ wallet_debit_completed_at: nowIso })
+      .eq("id", pendingId);
+  }
 
   const { data: allDistances } = await service
     .from("distances")

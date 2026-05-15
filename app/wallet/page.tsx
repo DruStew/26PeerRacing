@@ -62,8 +62,9 @@ export default async function WalletPage() {
           Wallet
         </h1>
         <p className="mt-3 max-w-2xl text-pretty text-[#1E3A5F]/75">
-          Credits from entry withdrawals (net of estimated card processing fees), future race payouts,
-          and membership top-ups will appear here. Bank transfers out will be added later.
+          Credits from entry withdrawals (full entry fee as wallet balance), future race payouts, and
+          membership top-ups will appear here. Processing fees apply when money leaves Peer Racing
+          (e.g. refund to your card). Bank transfers out will be added later.
         </p>
 
         <div className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm">
@@ -78,7 +79,7 @@ export default async function WalletPage() {
           {rows.length === 0 ? (
             <p className="mt-3 text-sm text-[#1E3A5F]/65">
               No transactions yet. Withdrawing from a paid entry while registration is open credits your
-              wallet (net of estimated Stripe fees — Peer Racing does not absorb those fees).
+              wallet for the full entry amount you paid.
             </p>
           ) : (
             <ul className="mt-4 divide-y divide-[#1E3A5F]/10 rounded-xl border border-[#1E3A5F]/10 bg-white">

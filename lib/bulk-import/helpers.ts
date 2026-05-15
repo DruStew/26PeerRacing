@@ -27,6 +27,13 @@ export function mapSex(m: unknown): "male" | "female" | null {
   return null;
 }
 
+/** Empty or unrecognized → false (not military). Y/yes/1/true → true. */
+export function mapActiveOrRetiredMilitary(v: unknown): boolean {
+  const u = String(v ?? "").trim().toLowerCase();
+  if (u === "y" || u === "yes" || u === "true" || u === "1") return true;
+  return false;
+}
+
 export function normEmail(e: unknown): string {
   return String(e ?? "")
     .trim()
