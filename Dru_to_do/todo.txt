@@ -1,9 +1,63 @@
 DRU TO-DO LIST
 ==============
+(last updated June 9, 2026 — algorithm port + results console pushed to GitHub, commit fe793b9)
 
+YOUR ITEMS (Dru)
+----------------
 1. Design racer share cards
    - Placeholder layouts live at localhost:3000/dev/share-cards
    - Templates in components/share/ShareCardTemplates.tsx (5 slot layouts, same data shape)
+   - Money always shown (transparency); 9:16 story format first, 1:1 feed later
 
 2. Resize division badge PNGs to ~1000px wide (same filenames, transparent background)
    - Replace PR_Alpha.png ... PR_Echo.png in /public — currently 17,044px wide, slow to load
+
+3. Review the producer results console (localhost:3000 -> event -> Edit -> Results console)
+   - Runs on sample data for now; give feedback on layout, badges, controls, finisher list
+
+
+BUILD QUEUE (with Cursor) — RESULTS PIPELINE
+--------------------------------------------
+Next session, start here. Order matters:
+
+4. Schema migration (results pipeline, step 1)
+   - Upgrade results table: add user_id, distance_id, division, division_place,
+     payout_cents, incentive division/place/payout columns, published state
+   - Wire badges table for awarding at publish (trophy case data)
+   - RLS: racers see own results; public sees published; promoter/admin manage
+   - Push with npm run db:push after writing
+
+5. Finish-time import (step 2)
+   - Producer uploads timing CSV -> results_raw -> match to entries by bib / PR ID / assigned_bib
+   - Unmatched-row review screen (typos, missing bibs)
+
+6. Wire results console to real data (step 3)
+   - Replace sample generator with imported finish times
+   - Activate Publish: locks divisions/payouts, awards badges, opens racer pages
+
+7. Racer-facing results + trophy case (step 4)
+   - Gamified result page: badge earned, overall place, division place, money won
+   - Virtual trophy case on racer profile (badges by event)
+   - Producer click-through on finisher list -> racer race history
+     (promoter-scoped API, limited to their events only — NOT full profile access)
+
+8. Share card feature (step 5 — rides on published results)
+   - Camera/photo -> canvas composite of Dru's card designs -> native share sheet (Web Share API)
+   - Optional AI celebratory caption (later)
+
+THE BIG TEST (after pipeline is live)
+-------------------------------------
+9. 100-runner race weekend rehearsal
+   - Seed script: 100 runners, all walks of life (elites -> DNFs), male/female/military mix
+   - One event: 1 long qualifier + 2 shorter roll-over distances, mixed entries
+   - Handful of real Stripe test-card entries through the UI; rest scripted
+   - Kiosk check-in on a couple computers (some manual for UI/UX, rest flagged by script)
+   - Mock race -> bulk upload finish times -> run algorithm -> tweak the ends -> publish
+   - Verify payouts, badges, racer pages, share cards — full system, end to end
+
+PARKED / LATER
+--------------
+- Numeric distance length on distances table (enables pace stats; may come from
+  race results import anyway)
+- Algorithm auto-suggestion already live on payout calculator (suggestion-only)
+- Parity check anytime: npm run algo:parity (proves TS == Python, 18/18 passing)
