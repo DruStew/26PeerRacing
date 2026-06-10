@@ -1,0 +1,9 @@
+DRU TO-DO LIST
+==============
+
+1. Design racer share cards
+   - Placeholder layouts live at localhost:3000/dev/share-cards
+   - Templates in components/share/ShareCardTemplates.tsx (5 slot layouts, same data shape)
+
+2. Resize division badge PNGs to ~1000px wide (same filenames, transparent background)
+   - Replace PR_Alpha.png ... PR_Echo.png in /public — currently 17,044px wide, slow to load

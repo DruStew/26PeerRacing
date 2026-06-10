@@ -37,6 +37,12 @@ yarn-error.log*
 __pycache__/
 *.py[cod]
 
+# algorithm parity harness — regenerated artifacts
+scripts/algorithm-parity/.venv/
+scripts/algorithm-parity/field.csv
+scripts/algorithm-parity/python-output.json
+scripts/algorithm-parity/ts-output.json
+
 # 26_PR Program — credentials (never commit)
 26_PR Program/src/client_secret/
 26_PR Program/src/read_token.json

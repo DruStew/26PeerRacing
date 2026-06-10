@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "import-fake-entries": "node scripts/import-fake-entries.mjs",
+    "algo:parity": "node scripts/algorithm-parity/run-parity.mjs",
     "db:login": "supabase login",
     "db:link": "supabase link",
     "db:push": "supabase db push",
@@ -35,6 +36,7 @@
     "postcss": "^8",
     "supabase": "^2.98.2",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5",
     "xlsx": "^0.18.5"
   }

@@ -36,6 +36,7 @@ import {
   entryCountToBracket,
   PAYOUT_BRACKET_ORDER,
 } from "@/lib/payout";
+import { calculateNumDivisions, calculateNumPayoutSlots } from "@/lib/algorithm";
 import type { DistancePayoutSettingsRow, PayoutBracketId, PayoutCalculationInput } from "@/lib/payout/types";
 
 function fmtUsd(cents: number) {
@@ -394,6 +395,19 @@ export function EventPayoutClient({
     [form?.entryCount],
   );
 
+  /**
+   * Peer Racing algorithm's field-size suggestion (same tables as the division
+   * algorithm). Suggestion only — never applied without the producer clicking.
+   */
+  const algorithmSuggestion = useMemo(() => {
+    const count = form?.entryCount ?? 0;
+    if (count < 1) return null;
+    return {
+      divisions: calculateNumDivisions(count),
+      paidPlaces: calculateNumPayoutSlots(count),
+    };
+  }, [form?.entryCount]);
+
   const femaleAutoScheduleColumn = useMemo(
     () => entryCountToBracket(femaleEntryCount),
     [femaleEntryCount],
@@ -615,6 +629,40 @@ export function EventPayoutClient({
               />
             </label>
           </div>
+
+          {algorithmSuggestion ? (
+            <div className="mt-4 rounded-lg border border-[#1E3A5F]/15 bg-[#fafbfc] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1E3A5F]/55">
+                Peer Racing algorithm suggestion
+              </p>
+              <p className="mt-1 text-sm text-[#1E3A5F]/80">
+                For <span className="font-semibold">{form.entryCount}</span>{" "}
+                {form.entryCount === 1 ? "entry" : "entries"}:{" "}
+                <span className="font-semibold">{algorithmSuggestion.divisions}</span>{" "}
+                {algorithmSuggestion.divisions === 1 ? "division" : "divisions"} ·{" "}
+                <span className="font-semibold">{algorithmSuggestion.paidPlaces}</span> paid{" "}
+                {algorithmSuggestion.paidPlaces === 1 ? "place" : "places"} per division
+              </p>
+              {form.divisionCount === algorithmSuggestion.divisions && form.scheduleMode === "auto" ? (
+                <p className="mt-1.5 text-xs text-emerald-800">Matches your current settings.</p>
+              ) : (
+                <button
+                  type="button"
+                  className="mt-2 rounded-md border border-[#1E3A5F]/25 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] hover:text-[#E87722]"
+                  onClick={() => {
+                    setDivisionCount(algorithmSuggestion.divisions);
+                    setForm((f) => (f ? { ...f, scheduleMode: "auto" } : f));
+                  }}
+                >
+                  Use suggestion
+                </button>
+              )}
+              <p className="mt-1.5 text-xs text-[#1E3A5F]/55">
+                Suggestion only — your saved settings always control the race. Paid places follow the auto schedule
+                column; switch to manual below to override.
+              </p>
+            </div>
+          ) : null}
 
           <h3 className="mt-8 text-sm font-semibold text-[#1E3A5F]">Peer Racing Advised Payout Schedules</h3>
           <p className="mt-1 text-xs text-[#1E3A5F]/65">

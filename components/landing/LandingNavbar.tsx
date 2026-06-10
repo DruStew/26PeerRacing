@@ -9,10 +9,12 @@ import { DEFAULT_PUBLIC_ROUTE, KIOSK_ROUTE, MY_ENTRIES_ROUTE, WALLET_ROUTE } fro
 
 const publicNav = [
   { name: "Find a Race", href: DEFAULT_PUBLIC_ROUTE },
-  { name: "PR Kiosk", href: KIOSK_ROUTE },
   { name: "From Our Founder", href: "/#from-founder" },
   { name: "Host an Event", href: "/promoter" },
 ] as const;
+
+/** Race-day staff only (promoter/admin); hidden from runners and signed-out visitors. */
+const kioskLink = { name: "PR Kiosk", href: KIOSK_ROUTE } as const;
 
 const membershipLink = {
   name: "Membership",
@@ -29,6 +31,7 @@ export function LandingNavbar() {
   const [sessionReady, setSessionReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [firstName, setFirstName] = useState<string | null>(null);
+  const [isRaceStaff, setIsRaceStaff] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -43,20 +46,32 @@ export function LandingNavbar() {
       if (!user) {
         setSignedIn(false);
         setFirstName(null);
+        setIsRaceStaff(false);
         setSessionReady(true);
         return;
       }
 
       setSignedIn(true);
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("first_name")
-        .eq("id", user.id)
-        .maybeSingle();
+      const [{ data: profile }, { data: staffRole }, { count: ownedEventCount }] =
+        await Promise.all([
+          supabase.from("profiles").select("first_name").eq("id", user.id).maybeSingle(),
+          supabase
+            .from("roles")
+            .select("role")
+            .eq("user_id", user.id)
+            .in("role", ["promoter", "admin"])
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("events")
+            .select("id", { count: "exact", head: true })
+            .eq("promoter_id", user.id),
+        ]);
 
       if (!cancelled) {
         const name = profile?.first_name?.trim();
         setFirstName(name && name.length > 0 ? name : null);
+        setIsRaceStaff(Boolean(staffRole) || (ownedEventCount ?? 0) > 0);
         setSessionReady(true);
       }
     }
@@ -83,8 +98,8 @@ export function LandingNavbar() {
         : null;
 
   const navLinks = signedIn
-    ? [...publicNav, myEntriesLink]
-    : [...publicNav.slice(0, 3), membershipLink, publicNav[3]];
+    ? [publicNav[0], ...(isRaceStaff ? [kioskLink] : []), publicNav[1], publicNav[2], myEntriesLink]
+    : [publicNav[0], publicNav[1], membershipLink, publicNav[2]];
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#1E3A5F]/10 bg-white">

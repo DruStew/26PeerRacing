@@ -1,0 +1,50 @@
+{
+  "entry_fee": 45,
+  "processing_fee_pct": 3,
+  "pr_holding_pct": 40,
+  "promoter_split_pct": 50,
+  "added_money": 1000,
+  "d1_adjustment": 250,
+  "divisions": {
+    "max_percentile": 95,
+    "min_percentile": 5,
+    "auto_set_divisions": true,
+    "divisions": 5,
+    "payout_slots": 5
+  },
+  "incentive_division1": {
+    "type": "percentage",
+    "value": 10,
+    "payout_slots": 3,
+    "divisions": 2,
+    "criteria": "female"
+  },
+  "incentive_division2": {
+    "type": "fixed",
+    "value": 500,
+    "payout_slots": 2,
+    "divisions": 1,
+    "criteria": ["over", "50"]
+  },
+  "incentive_division3": {
+    "type": "fixed",
+    "value": 750,
+    "payout_slots": 3,
+    "divisions": 1,
+    "criteria": "military"
+  },
+  "indices": {
+    "id": 0,
+    "bib": 1,
+    "first": 2,
+    "last": 3,
+    "age": 4,
+    "sex": 5,
+    "time": 6,
+    "military": 7,
+    "overall_rank": 8,
+    "peer_racing_rank": 9
+  },
+  "time_fstr": "%H:%M:%S.%f",
+  "png": false
+}
