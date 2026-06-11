@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isMembershipActive, type MembershipRow } from "@/lib/membership";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
 
 export async function GET(request: Request) {
@@ -24,7 +25,42 @@ export async function GET(request: Request) {
   }
 
   const redirectTo = returnUrl.startsWith("/") ? returnUrl : DEFAULT_PUBLIC_ROUTE;
-  return NextResponse.redirect(new URL(redirectTo, url.origin), {
+
+  // New-member onboarding: a fresh magic-link signup has no profile and no
+  // membership. Route them through profile completion -> membership purchase ->
+  // wherever they were headed, instead of dropping them on the events list.
+  const userId = data.session.user.id;
+  const [{ data: profile }, { data: membership }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("first_name,last_name,dob,sex,phone")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("memberships")
+      .select("user_id,status,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  const profileComplete = Boolean(
+    profile?.first_name?.trim() &&
+      profile?.last_name?.trim() &&
+      profile?.dob &&
+      profile?.sex &&
+      profile?.phone?.trim(),
+  );
+  const membershipActive = isMembershipActive((membership as MembershipRow | null) ?? null);
+
+  let next = redirectTo;
+  if (!membershipActive) {
+    next = `/membership/renew?returnUrl=${encodeURIComponent(redirectTo)}`;
+  }
+  if (!profileComplete) {
+    next = `/profile/complete?returnUrl=${encodeURIComponent(next)}`;
+  }
+
+  return NextResponse.redirect(new URL(next, url.origin), {
     status: 303,
   });
 }

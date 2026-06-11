@@ -1,6 +1,7 @@
 /**
  * Peer Racing division badges — renders the official badge artwork from /public
- * (PR_Alpha.png … PR_Echo.png). Used on the producer results console and, later,
+ * (PR_Alpha.png … PR_Echo.png; compact PR_*_small.png on the results console). Used on the producer
+ * results console and, later,
  * racer results pages and the virtual trophy case.
  *
  * Incentive pools (female / military) show a small text chip under the badge;
@@ -26,6 +27,14 @@ const BADGE_SRC: Record<string, string> = {
   Echo: "/PR_Echo.png",
 };
 
+const BADGE_SRC_SMALL: Record<string, string> = {
+  Alpha: "/PR_Alpha_small.png",
+  Bravo: "/PR_Bravo_small.png",
+  Charlie: "/PR_Charlie_small.png",
+  Delta: "/PR_Delta_small.png",
+  Echo: "/PR_Echo_small.png",
+};
+
 export type BadgeVariant = "main" | "female" | "military";
 
 const VARIANT_CHIP: Record<BadgeVariant, { label: string; className: string } | null> = {
@@ -38,15 +47,18 @@ export function DivisionBadge({
   division,
   variant = "main",
   size = 72,
+  small = false,
   muted = false,
 }: {
   division: string;
   variant?: BadgeVariant;
   /** Rendered width in px; height follows the artwork's aspect ratio. */
   size?: number;
+  /** Use compact badge artwork (PR_*_small.png) instead of full-size PNGs. */
+  small?: boolean;
   muted?: boolean;
 }) {
-  const src = BADGE_SRC[division];
+  const src = (small ? BADGE_SRC_SMALL : BADGE_SRC)[division];
   const chip = VARIANT_CHIP[variant];
   if (!src) return null;
 

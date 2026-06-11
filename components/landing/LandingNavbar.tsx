@@ -38,41 +38,46 @@ export function LandingNavbar() {
     let cancelled = false;
 
     async function loadSession() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (cancelled) return;
+      try {
+        // getSession reads the local session (no network, no auth-lock contention).
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const user = session?.user ?? null;
+        if (cancelled) return;
 
-      if (!user) {
-        setSignedIn(false);
-        setFirstName(null);
-        setIsRaceStaff(false);
-        setSessionReady(true);
-        return;
-      }
+        if (!user) {
+          setSignedIn(false);
+          setFirstName(null);
+          setIsRaceStaff(false);
+          return;
+        }
 
-      setSignedIn(true);
-      const [{ data: profile }, { data: staffRole }, { count: ownedEventCount }] =
-        await Promise.all([
-          supabase.from("profiles").select("first_name").eq("id", user.id).maybeSingle(),
-          supabase
-            .from("roles")
-            .select("role")
-            .eq("user_id", user.id)
-            .in("role", ["promoter", "admin"])
-            .limit(1)
-            .maybeSingle(),
-          supabase
-            .from("events")
-            .select("id", { count: "exact", head: true })
-            .eq("promoter_id", user.id),
-        ]);
+        setSignedIn(true);
+        const [{ data: profile }, { data: staffRole }, { count: ownedEventCount }] =
+          await Promise.all([
+            supabase.from("profiles").select("first_name").eq("id", user.id).maybeSingle(),
+            supabase
+              .from("roles")
+              .select("role")
+              .eq("user_id", user.id)
+              .in("role", ["promoter", "admin"])
+              .limit(1)
+              .maybeSingle(),
+            supabase
+              .from("events")
+              .select("id", { count: "exact", head: true })
+              .eq("promoter_id", user.id),
+          ]);
 
-      if (!cancelled) {
-        const name = profile?.first_name?.trim();
-        setFirstName(name && name.length > 0 ? name : null);
-        setIsRaceStaff(Boolean(staffRole) || (ownedEventCount ?? 0) > 0);
-        setSessionReady(true);
+        if (!cancelled) {
+          const name = profile?.first_name?.trim();
+          setFirstName(name && name.length > 0 ? name : null);
+          setIsRaceStaff(Boolean(staffRole) || (ownedEventCount ?? 0) > 0);
+        }
+      } finally {
+        // Whatever happens, never leave the greeting stuck on the loading shimmer.
+        if (!cancelled) setSessionReady(true);
       }
     }
 
@@ -81,7 +86,12 @@ export function LandingNavbar() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(() => {
-      void loadSession();
+      // Defer out of the auth callback: supabase-js holds its auth lock while this
+      // callback runs, and awaiting auth/db calls inside it can deadlock (the
+      // stuck-shimmer bug). setTimeout(0) runs loadSession after the lock releases.
+      setTimeout(() => {
+        if (!cancelled) void loadSession();
+      }, 0);
     });
 
     return () => {
@@ -96,6 +106,13 @@ export function LandingNavbar() {
       : signedIn
         ? "Hi there"
         : null;
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    // Full navigation so server components drop the session too.
+    window.location.assign("/");
+  }
 
   const navLinks = signedIn
     ? [publicNav[0], ...(isRaceStaff ? [kioskLink] : []), publicNav[1], publicNav[2], myEntriesLink]
@@ -178,6 +195,17 @@ export function LandingNavbar() {
                   >
                     {walletLink.name}
                   </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="block w-full border-t border-[#1E3A5F]/10 px-3 py-2 text-left text-sm font-medium text-[#1E3A5F]/80 hover:bg-[#1E3A5F]/5 hover:text-[#E87722]"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      void handleSignOut();
+                    }}
+                  >
+                    Sign Out
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -255,6 +283,16 @@ export function LandingNavbar() {
                   >
                     {walletLink.name}
                   </Link>
+                  <button
+                    type="button"
+                    className="block w-full py-2 pl-2 text-left text-base font-medium text-[#1E3A5F]/80 hover:text-[#E87722]"
+                    onClick={() => {
+                      setOpen(false);
+                      void handleSignOut();
+                    }}
+                  >
+                    Sign Out
+                  </button>
                 </div>
               ) : (
                 <Link

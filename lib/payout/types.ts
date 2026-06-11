@@ -25,7 +25,12 @@ export type PayoutCalculationInput = {
   entryFeeCents: number;
   /** Processing / platform fee as a fraction of gross (e.g. 0.04 = 4%). */
   processingFeeFraction: number;
-  /** Fraction of net-after-processing that goes to PR “holding” (remainder → racers pot). */
+  /**
+   * Series shootout fund holding, as a fraction of net-after-processing.
+   * Taken BEFORE PR holding; banked per distance to fund the series finale.
+   */
+  shootoutFraction?: number;
+  /** Fraction of net-after-processing (less shootout fund) that goes to PR “holding” (remainder → racers pot). */
   prHoldingFraction: number;
   /** Of the PR holding slice, fraction paid to the producer (remainder → Peer Racing org). */
   producerFractionOfPrHolding: number;
@@ -96,6 +101,8 @@ export type PayoutCalculationResult = {
   grossPotCents: number;
   processingFeeCents: number;
   netAfterProcessingCents: number;
+  /** Dollars held back for the series shootout fund (off net-after-processing, before PR holding). */
+  shootoutFundCents: number;
   prHoldingCents: number;
   /** Net to racers after PR holding (before female/military incentives). */
   racersPotCents: number;
@@ -151,6 +158,7 @@ export type PayoutCalculationResult = {
 export type DistancePayoutSettingsRow = {
   distance_id: string;
   processing_fee_fraction: number;
+  shootout_fraction: number;
   pr_holding_fraction: number;
   producer_fraction_of_pr_holding: number;
   true_added_money_cents: number;

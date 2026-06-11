@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { EventNav } from "@/components/promoter/EventNav";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { ResultsConsoleClient } from "@/components/promoter/ResultsConsoleClient";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -66,6 +67,8 @@ export default async function EventResultsConsolePage({
           Back to event
         </Link>
 
+        <EventNav eventId={id} current="results" />
+
         <div className="mt-6 border-b border-[#1E3A5F]/10 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race night</p>
           <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
@@ -77,6 +80,15 @@ export default async function EventResultsConsolePage({
             payouts fall into place, and you can tweak the percentile ends for outliers before publishing. Dollar
             amounts come from this distance&apos;s saved payout calculator settings.
           </p>
+          <Link
+            href={`/promoter/events/${id}/results/import`}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-[#1E3A5F]/20 bg-white px-4 py-2 text-sm font-semibold text-[#1E3A5F] shadow-sm transition-colors hover:border-[#E87722] hover:text-[#E87722]"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 9l5-5 5 5M12 4v12" />
+            </svg>
+            Import finish times (timing CSV)
+          </Link>
         </div>
 
         <div className="mt-10">

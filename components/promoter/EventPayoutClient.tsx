@@ -35,6 +35,7 @@ import {
   defaultDistancePayoutSettings,
   entryCountToBracket,
   PAYOUT_BRACKET_ORDER,
+  PAYOUT_SCHEDULE,
 } from "@/lib/payout";
 import { calculateNumDivisions, calculateNumPayoutSlots } from "@/lib/algorithm";
 import type { DistancePayoutSettingsRow, PayoutBracketId, PayoutCalculationInput } from "@/lib/payout/types";
@@ -70,23 +71,28 @@ function divisionLabelsForCount(count: number): string[] {
   return [...DIVISION_NAMES.slice(0, c)];
 }
 
+/** Dropdown label for a schedule column: entrant band + how many holes that column pays. */
+function bracketOptionLabel(b: PayoutBracketId): string {
+  const holes = PAYOUT_SCHEDULE[b].filter((w) => w != null && w > 0).length;
+  return `${b} entrants — pays ${holes} ${holes === 1 ? "hole" : "holes"}`;
+}
+
 type DistanceOption = { id: string; label: string; entry_fee_cents: number };
 
 type FormState = {
   entryCount: number;
   entryFeeCents: number;
   processingFeePercent: number;
+  shootoutPercent: number;
   prHoldingPercent: number;
   producerShareOfPrPercent: number;
   trueAddedMoneyCents: number;
   femaleIncentiveCents: number;
   femaleIncentiveDivisionCount: number;
-  femaleIncentivePlacesToPay: number;
   femaleIncentiveScheduleMode: "auto" | "manual";
   femaleIncentiveManualBracket: PayoutBracketId;
   militaryIncentiveCents: number;
   militaryIncentiveDivisionCount: number;
-  militaryIncentivePlacesToPay: number;
   militaryIncentiveScheduleMode: "auto" | "manual";
   militaryIncentiveManualBracket: PayoutBracketId;
   eliteDivisionCarveCents: number;
@@ -110,6 +116,7 @@ function rowToForm(
           entryCount: row.entry_count_override ?? liveEntryCount,
           entryFeeCents: row.entry_fee_cents_override ?? liveFeeCents,
           processingFeePercent: Number(row.processing_fee_fraction) * 100,
+          shootoutPercent: Number(row.shootout_fraction ?? 0) * 100,
           prHoldingPercent: Number(row.pr_holding_fraction) * 100,
           producerShareOfPrPercent: Number(row.producer_fraction_of_pr_holding) * 100,
           trueAddedMoneyCents: row.true_added_money_cents,
@@ -118,20 +125,12 @@ function rowToForm(
             MAX_DIVISIONS,
             Math.max(1, Math.floor(Number(row.female_incentive_division_count ?? 1))),
           ),
-          femaleIncentivePlacesToPay: Math.min(
-            12,
-            Math.max(1, Math.floor(Number(row.female_incentive_places_to_pay ?? 12))),
-          ),
           femaleIncentiveScheduleMode: row.female_incentive_schedule_mode ?? "auto",
           femaleIncentiveManualBracket: (row.female_incentive_manual_bracket as PayoutBracketId) ?? "91-120",
           militaryIncentiveCents: row.military_incentive_cents ?? 0,
           militaryIncentiveDivisionCount: Math.min(
             MAX_DIVISIONS,
             Math.max(1, Math.floor(Number(row.military_incentive_division_count ?? 1))),
-          ),
-          militaryIncentivePlacesToPay: Math.min(
-            12,
-            Math.max(1, Math.floor(Number(row.military_incentive_places_to_pay ?? 12))),
           ),
           militaryIncentiveScheduleMode: row.military_incentive_schedule_mode ?? "auto",
           militaryIncentiveManualBracket: (row.military_incentive_manual_bracket as PayoutBracketId) ?? "91-120",
@@ -146,17 +145,16 @@ function rowToForm(
         entryCount: liveEntryCount,
         entryFeeCents: liveFeeCents,
         processingFeePercent: d.processing_fee_fraction * 100,
+        shootoutPercent: (d.shootout_fraction ?? 0) * 100,
         prHoldingPercent: d.pr_holding_fraction * 100,
         producerShareOfPrPercent: d.producer_fraction_of_pr_holding * 100,
         trueAddedMoneyCents: 0,
         femaleIncentiveCents: 0,
         femaleIncentiveDivisionCount: 1,
-        femaleIncentivePlacesToPay: 12,
         femaleIncentiveScheduleMode: "auto" as const,
         femaleIncentiveManualBracket: "91-120",
         militaryIncentiveCents: 0,
         militaryIncentiveDivisionCount: 1,
-        militaryIncentivePlacesToPay: 12,
         militaryIncentiveScheduleMode: "auto" as const,
         militaryIncentiveManualBracket: "91-120",
         eliteDivisionCarveCents: 0,
@@ -176,12 +174,13 @@ function formToInput(
     entryCount: f.entryCount,
     entryFeeCents: f.entryFeeCents,
     processingFeeFraction: f.processingFeePercent / 100,
+    shootoutFraction: f.shootoutPercent / 100,
     prHoldingFraction: f.prHoldingPercent / 100,
     producerFractionOfPrHolding: f.producerShareOfPrPercent / 100,
     trueAddedMoneyCents: f.trueAddedMoneyCents,
     femaleIncentiveFromRacersPotCents: f.femaleIncentiveCents,
     femaleIncentiveDivisionCount: f.femaleIncentiveDivisionCount,
-    femaleIncentivePlacesToPay: f.femaleIncentivePlacesToPay,
+    femaleIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
     femaleIncentiveDivisionLabels: divisionLabelsForCount(f.femaleIncentiveDivisionCount),
     femaleIncentiveScheduleMode: f.femaleIncentiveScheduleMode,
     femaleIncentiveManualBracket:
@@ -189,7 +188,7 @@ function formToInput(
     femaleIncentiveBracketEntryCount: Math.max(0, incentiveBandCounts.femaleEntryCount),
     militaryIncentiveFromRacersPotCents: f.militaryIncentiveCents,
     militaryIncentiveDivisionCount: f.militaryIncentiveDivisionCount,
-    militaryIncentivePlacesToPay: f.militaryIncentivePlacesToPay,
+    militaryIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
     militaryIncentiveDivisionLabels: divisionLabelsForCount(f.militaryIncentiveDivisionCount),
     militaryIncentiveScheduleMode: f.militaryIncentiveScheduleMode,
     militaryIncentiveManualBracket:
@@ -326,6 +325,7 @@ export function EventPayoutClient({
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [checkedInCount, setCheckedInCount] = useState(0);
   const [checkedInFemaleCount, setCheckedInFemaleCount] = useState(0);
   const [checkedInMilitaryCount, setCheckedInMilitaryCount] = useState(0);
   const [femaleEntryCount, setFemaleEntryCount] = useState(0);
@@ -348,6 +348,7 @@ export function EventPayoutClient({
         suggestedEntryCount?: number;
         suggestedFeeCents?: number;
         distance?: { label: string };
+        checkedInCount?: number;
         checkedInFemaleCount?: number;
         checkedInMilitaryCount?: number;
         femaleEntryCount?: number;
@@ -364,6 +365,7 @@ export function EventPayoutClient({
       setLiveFeeCents(liveF);
       setFemaleEntryCount(json.femaleEntryCount ?? 0);
       setMilitaryEntryCount(json.militaryEntryCount ?? 0);
+      setCheckedInCount(json.checkedInCount ?? 0);
       setCheckedInFemaleCount(json.checkedInFemaleCount ?? 0);
       setCheckedInMilitaryCount(json.checkedInMilitaryCount ?? 0);
       if (json.distance?.label) setSelectedLabel(json.distance.label);
@@ -389,6 +391,20 @@ export function EventPayoutClient({
         : null,
     [form, femaleEntryCount, militaryEntryCount],
   );
+
+  /** Marketing headline number: every place that pays a check, across main divisions and both incentive pools. */
+  const checksPaidCount = useMemo(() => {
+    if (!result) return 0;
+    const countPlaces = (divs: { places: { amountCents: number }[] }[]) =>
+      divs.reduce((sum, d) => sum + d.places.filter((p) => p.amountCents > 0).length, 0);
+    return (
+      countPlaces(result.divisions) +
+      countPlaces(result.femaleIncentiveDivisions) +
+      countPlaces(result.militaryIncentiveDivisions)
+    );
+  }, [result]);
+
+  const modelMatchesCheckedIn = checkedInCount > 0 && form?.entryCount === checkedInCount;
 
   const autoScheduleColumn = useMemo(
     () => (form ? entryCountToBracket(form.entryCount) : "<10"),
@@ -432,18 +448,19 @@ export function EventPayoutClient({
         body: JSON.stringify({
           distance_id: selectedDistanceId,
           processing_fee_percent: form.processingFeePercent,
+          shootout_percent: form.shootoutPercent,
           pr_holding_percent: form.prHoldingPercent,
           producer_share_of_pr_holding_percent: form.producerShareOfPrPercent,
           true_added_money_cents: form.trueAddedMoneyCents,
           female_incentive_cents: form.femaleIncentiveCents,
           female_incentive_division_count: form.femaleIncentiveDivisionCount,
-          female_incentive_places_to_pay: form.femaleIncentivePlacesToPay,
+          female_incentive_places_to_pay: SCHEDULE_PLACES_TO_PAY,
           female_incentive_schedule_mode: form.femaleIncentiveScheduleMode,
           female_incentive_manual_bracket:
             form.femaleIncentiveScheduleMode === "manual" ? form.femaleIncentiveManualBracket : null,
           military_incentive_cents: form.militaryIncentiveCents,
           military_incentive_division_count: form.militaryIncentiveDivisionCount,
-          military_incentive_places_to_pay: form.militaryIncentivePlacesToPay,
+          military_incentive_places_to_pay: SCHEDULE_PLACES_TO_PAY,
           military_incentive_schedule_mode: form.militaryIncentiveScheduleMode,
           military_incentive_manual_bracket:
             form.militaryIncentiveScheduleMode === "manual" ? form.militaryIncentiveManualBracket : null,
@@ -511,7 +528,62 @@ export function EventPayoutClient({
   }
 
   return (
-    <div className="grid gap-10 lg:grid-cols-2">
+    <div className="space-y-8">
+      <div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/70">
+              Checked-in racers · {selectedLabel}
+            </p>
+            <p className="font-display mt-1 text-3xl font-bold text-emerald-800">
+              {checkedInCount}/{liveEntryCount}
+              <span className="ml-2 text-base font-semibold text-emerald-800/70">entries checked in</span>
+            </p>
+            <p className="mt-1 text-xs text-emerald-900/70">
+              The only count that funds the pot — no-shows get their fees credited back.
+            </p>
+          </div>
+          <div className="rounded-xl border border-[#1E3A5F]/10 bg-white p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">Total racers pot</p>
+            <p className="font-display mt-1 text-3xl font-bold text-[#1E3A5F]">
+              {result ? fmtUsd(result.racersPotCents) : "—"}
+            </p>
+            <p className="mt-1 text-xs text-[#1E3A5F]/60">
+              From the modeled field of {form.entryCount} below, after processing and PR holding.
+            </p>
+          </div>
+          <div className="rounded-xl border border-[#E87722]/30 bg-[#fff8f3] p-5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#E87722]/80">Checks paid out</p>
+            <p className="font-display mt-1 text-3xl font-bold text-[#1E3A5F]">{checksPaidCount}</p>
+            <p className="mt-1 text-xs text-[#1E3A5F]/60">
+              Every paid place across all divisions and incentive pools.
+            </p>
+          </div>
+        </div>
+        {checkedInCount > 0 && !modelMatchesCheckedIn ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <span>
+              The calculator below is modeling <span className="font-semibold">{form.entryCount}</span> entries, but{" "}
+              <span className="font-semibold">{checkedInCount}</span> racers actually checked in. Only checked-in racers
+              fund the pot.
+            </span>
+            <button
+              type="button"
+              className="rounded-md border border-amber-700/30 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:border-amber-700/60"
+              onClick={() => setForm((f) => (f ? { ...f, entryCount: checkedInCount } : f))}
+            >
+              Use checked-in count ({checkedInCount})
+            </button>
+          </div>
+        ) : null}
+        {modelMatchesCheckedIn ? (
+          <p className="mt-3 text-xs font-medium text-emerald-800">
+            Pot is based on the {checkedInCount} checked-in racers — save settings below to lock this in for results.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="grid gap-10 lg:grid-cols-2">
       <div className="space-y-6">
         <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
           <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Race distance</h2>
@@ -580,8 +652,16 @@ export function EventPayoutClient({
               max={100}
             />
             <PercentField
+              label="Shootout fund holding"
+              hint="Percent of net-after-processing held back for the series finale — comes out before PR holding."
+              value={form.shootoutPercent}
+              onChange={(n) => setForm((f) => (f ? { ...f, shootoutPercent: n } : f))}
+              step={0.5}
+              max={100}
+            />
+            <PercentField
               label="PR holding"
-              hint="Share of net-after-processing (rest goes to racers pot)."
+              hint="Share of net after processing and shootout fund (rest goes to racers pot)."
               value={form.prHoldingPercent}
               onChange={(n) => setForm((f) => (f ? { ...f, prHoldingPercent: n } : f))}
               step={1}
@@ -701,7 +781,7 @@ export function EventPayoutClient({
                 >
                   {PAYOUT_BRACKET_ORDER.map((b) => (
                     <option key={b} value={b}>
-                      {b}
+                      {bracketOptionLabel(b)}
                     </option>
                   ))}
                 </select>
@@ -811,7 +891,7 @@ export function EventPayoutClient({
                         >
                           {PAYOUT_BRACKET_ORDER.map((b) => (
                             <option key={b} value={b}>
-                              {b}
+                              {bracketOptionLabel(b)}
                             </option>
                           ))}
                         </select>
@@ -847,34 +927,12 @@ export function EventPayoutClient({
                       }
                     />
                   </label>
-                  <label className="block text-sm font-medium text-[#1E3A5F]">
-                    Holes to pay (female pool)
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      className={`${inputClass} tabular-nums`}
-                      value={form.femaleIncentivePlacesToPay}
-                      onChange={(e) =>
-                        setForm((f) =>
-                          f
-                            ? {
-                                ...f,
-                                femaleIncentivePlacesToPay: Math.min(
-                                  12,
-                                  Math.max(1, Number(e.target.value) || 1),
-                                ),
-                              }
-                            : f,
-                        )
-                      }
-                    />
-                  </label>
                   </div>
                 </div>
               ) : (
                 <p className="mt-2 text-xs text-[#1E3A5F]/55">
-                  Enter an amount above to choose divisions and holes for the female incentive pool.
+                  Enter an amount above to choose divisions for the female incentive pool. Holes paid come from the
+                  schedule column.
                 </p>
               )}
             </div>
@@ -934,7 +992,7 @@ export function EventPayoutClient({
                         >
                           {PAYOUT_BRACKET_ORDER.map((b) => (
                             <option key={b} value={b}>
-                              {b}
+                              {bracketOptionLabel(b)}
                             </option>
                           ))}
                         </select>
@@ -970,34 +1028,12 @@ export function EventPayoutClient({
                       }
                     />
                   </label>
-                  <label className="block text-sm font-medium text-[#1E3A5F]">
-                    Holes to pay (military pool)
-                    <input
-                      type="number"
-                      min={1}
-                      max={12}
-                      className={`${inputClass} tabular-nums`}
-                      value={form.militaryIncentivePlacesToPay}
-                      onChange={(e) =>
-                        setForm((f) =>
-                          f
-                            ? {
-                                ...f,
-                                militaryIncentivePlacesToPay: Math.min(
-                                  12,
-                                  Math.max(1, Number(e.target.value) || 1),
-                                ),
-                              }
-                            : f,
-                        )
-                      }
-                    />
-                  </label>
                   </div>
                 </div>
               ) : (
                 <p className="mt-2 text-xs text-[#1E3A5F]/55">
-                  Enter an amount above to choose divisions and holes for the military incentive pool.
+                  Enter an amount above to choose divisions for the military incentive pool. Holes paid come from the
+                  schedule column.
                 </p>
               )}
             </div>
@@ -1024,7 +1060,7 @@ export function EventPayoutClient({
             <div className="rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6">
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#1E3A5F]/55">Live calculation</p>
               <p className="mt-1 text-sm text-[#1E3A5F]/75">
-                Bracket used: <span className="font-semibold text-[#1E3A5F]">{result.bracketUsed}</span>
+                Bracket used: <span className="font-semibold text-[#1E3A5F]">{bracketOptionLabel(result.bracketUsed)}</span>
               </p>
               <dl className="mt-4 space-y-2 text-sm text-[#1E3A5F]">
                 <div className="flex justify-between gap-4">
@@ -1039,6 +1075,14 @@ export function EventPayoutClient({
                   <dt>Net after processing</dt>
                   <dd>{fmtUsd(result.netAfterProcessingCents)}</dd>
                 </div>
+                {result.shootoutFundCents > 0 ? (
+                  <div className="flex justify-between gap-4">
+                    <dt>Shootout fund holding</dt>
+                    <dd className="text-right tabular-nums font-semibold text-[#E87722]">
+                      {fmtUsd(result.shootoutFundCents)}
+                    </dd>
+                  </div>
+                ) : null}
                 <div className="flex justify-between gap-4">
                   <dt>PR holding</dt>
                   <dd>{fmtUsd(result.prHoldingCents)}</dd>
@@ -1054,7 +1098,7 @@ export function EventPayoutClient({
                 {result.femaleIncentiveRequestedCents > 0 && result.femaleIncentiveBracketUsed ? (
                   <div className="flex justify-between gap-4">
                     <dt>Female pool — schedule column</dt>
-                    <dd className="text-right font-semibold">{result.femaleIncentiveBracketUsed}</dd>
+                    <dd className="text-right font-semibold">{bracketOptionLabel(result.femaleIncentiveBracketUsed)}</dd>
                   </div>
                 ) : null}
                 <div className="flex justify-between gap-4">
@@ -1064,7 +1108,7 @@ export function EventPayoutClient({
                 {result.militaryIncentiveRequestedCents > 0 && result.militaryIncentiveBracketUsed ? (
                   <div className="flex justify-between gap-4">
                     <dt>Military pool — schedule column</dt>
-                    <dd className="text-right font-semibold">{result.militaryIncentiveBracketUsed}</dd>
+                    <dd className="text-right font-semibold">{bracketOptionLabel(result.militaryIncentiveBracketUsed)}</dd>
                   </div>
                 ) : null}
                 <div className="flex justify-between gap-4">
@@ -1183,6 +1227,7 @@ export function EventPayoutClient({
             ) : null}
           </>
         ) : null}
+      </div>
       </div>
     </div>
   );

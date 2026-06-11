@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function RenewMembershipForm({ paidCheckoutEnabled }: { paidCheckoutEnabled: boolean }) {
+export function RenewMembershipForm({
+  paidCheckoutEnabled,
+  returnUrl,
+}: {
+  paidCheckoutEnabled: boolean;
+  returnUrl?: string | null;
+}) {
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +19,11 @@ export function RenewMembershipForm({ paidCheckoutEnabled }: { paidCheckoutEnabl
     setError(null);
 
     if (paidCheckoutEnabled) {
-      const res = await fetch("/api/membership/checkout", { method: "POST" });
+      const res = await fetch("/api/membership/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnUrl: returnUrl ?? null }),
+      });
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
       if (!res.ok || !data.url) {
         setStatus("error");
@@ -31,7 +41,9 @@ export function RenewMembershipForm({ paidCheckoutEnabled }: { paidCheckoutEnabl
       setError((data as { error?: string }).error ?? "Renewal failed");
       return;
     }
-    router.push("/membership/renewed");
+    router.push(
+      returnUrl ? `/membership/renewed?returnUrl=${encodeURIComponent(returnUrl)}` : "/membership/renewed",
+    );
     router.refresh();
   };
 

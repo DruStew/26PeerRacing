@@ -1,0 +1,236 @@
+/**
+ * Shared results computation for the producer console (client preview) and the
+ * publish API (server write). Both run this exact function on the same inputs,
+ * so published divisions/payouts always equal what the producer saw on screen.
+ *
+ * Money comes from the payout calculator settings (lib/payout); the algorithm
+ * only places runners into divisions.
+ */
+
+import {
+  AlgorithmEntry,
+  filterIncentiveEntries,
+  runAlgorithm,
+  runPreAlgorithm,
+  sortEntries,
+} from "@/lib/algorithm";
+import type { AlgorithmRunResult, PayoutSource } from "@/lib/algorithm";
+import { calculateEventPayout, defaultDistancePayoutSettings } from "@/lib/payout";
+import type {
+  DistancePayoutSettingsRow,
+  DivisionPayoutResult,
+  PayoutCalculationInput,
+} from "@/lib/payout/types";
+
+export const DIVISION_NAMES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"] as const;
+export const SCHEDULE_PLACES_TO_PAY = 12;
+export const MIN_FINISHERS = 5;
+
+/** One finisher heading into the algorithm. */
+export interface FinisherInput {
+  /** Stable display id — PR ID when known, otherwise entry id. */
+  id: string;
+  bib: string;
+  first: string;
+  last: string;
+  age: number;
+  sex: "Male" | "Female";
+  timeS: number;
+  military: boolean;
+}
+
+export interface IncentivePool {
+  key: "female" | "military";
+  title: string;
+  variant: "female" | "military";
+  criteria: "female" | "military";
+  divisionCount: number;
+  payoutDivisions: DivisionPayoutResult[];
+}
+
+export interface ConsoleComputation {
+  finishers: number;
+  payoutByDivision: Map<string, DivisionPayoutResult>;
+  main: AlgorithmRunResult;
+  incentives: (IncentivePool & { result: AlgorithmRunResult })[];
+  preAlgorithm: { low: number; high: number };
+  totalMainPaidCents: number;
+  totalIncentivePaidCents: number;
+  warnings: string[];
+  entries: AlgorithmEntry[];
+  /** Series shootout fund dollars held back by this race (banked on publish). */
+  shootoutFundCents: number;
+  /** Shootout holding fraction used (echo of settings). */
+  shootoutFraction: number;
+  /** Entry count that funded the pot (override ?? registered ?? finishers). */
+  potEntryCount: number;
+}
+
+export interface ComputeParams {
+  rows: FinisherInput[];
+  settings: DistancePayoutSettingsRow | null;
+  distanceId: string;
+  /** Entry fee from the distance, used when settings carry no override. */
+  liveFeeCents: number;
+  /** Registered entry count driving the pot (real mode); null = use finisher count. */
+  registeredEntryCount: number | null;
+  minPercentile: number;
+  maxPercentile: number;
+}
+
+export function fmtTime(totalSeconds: number): string {
+  const s = Math.round(totalSeconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+export function computeConsoleResults(params: ComputeParams): ConsoleComputation | { error: string } {
+  const { rows, settings, distanceId, liveFeeCents, registeredEntryCount, minPercentile, maxPercentile } = params;
+
+  if (rows.length < MIN_FINISHERS) {
+    return { error: `Need at least ${MIN_FINISHERS} finishers to compute divisions.` };
+  }
+
+  const d = settings ?? {
+    ...defaultDistancePayoutSettings(distanceId),
+    entry_fee_cents_override: null,
+    entry_count_override: null,
+  };
+
+  const finishers = rows.length;
+  const femaleCount = rows.filter((r) => r.sex === "Female").length;
+  const militaryCount = rows.filter((r) => r.military).length;
+  const feeCents = d.entry_fee_cents_override ?? liveFeeCents;
+  const divisionCount = Math.min(5, Math.max(1, d.division_count));
+  const divisionLabels = [...DIVISION_NAMES.slice(0, divisionCount)];
+
+  const input: PayoutCalculationInput = {
+    entryCount: d.entry_count_override ?? registeredEntryCount ?? finishers,
+    entryFeeCents: feeCents,
+    processingFeeFraction: Number(d.processing_fee_fraction),
+    shootoutFraction: Number(d.shootout_fraction ?? 0),
+    prHoldingFraction: Number(d.pr_holding_fraction),
+    producerFractionOfPrHolding: Number(d.producer_fraction_of_pr_holding),
+    trueAddedMoneyCents: d.true_added_money_cents,
+    femaleIncentiveFromRacersPotCents: d.female_incentive_cents ?? 0,
+    femaleIncentiveDivisionCount: d.female_incentive_division_count ?? 1,
+    // Incentive pools always pay the full schedule column; the column's holes define the payout depth.
+    femaleIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
+    femaleIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, d.female_incentive_division_count ?? 1)],
+    femaleIncentiveScheduleMode: d.female_incentive_schedule_mode ?? "auto",
+    femaleIncentiveManualBracket: d.female_incentive_manual_bracket ?? undefined,
+    femaleIncentiveBracketEntryCount: femaleCount,
+    militaryIncentiveFromRacersPotCents: d.military_incentive_cents ?? 0,
+    militaryIncentiveDivisionCount: d.military_incentive_division_count ?? 1,
+    militaryIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
+    militaryIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, d.military_incentive_division_count ?? 1)],
+    militaryIncentiveScheduleMode: d.military_incentive_schedule_mode ?? "auto",
+    militaryIncentiveManualBracket: d.military_incentive_manual_bracket ?? undefined,
+    militaryIncentiveBracketEntryCount: militaryCount,
+    eliteDivisionCarveFromPoolCents: d.elite_division_carve_cents,
+    divisionCount,
+    eliteDivisionIndex: Math.min(divisionCount - 1, Math.max(0, d.elite_division_index)),
+    scheduleMode: d.schedule_mode,
+    manualBracket: d.manual_bracket ?? undefined,
+    placesToPay: SCHEDULE_PLACES_TO_PAY,
+    divisionLabels,
+  };
+
+  let payout;
+  try {
+    payout = calculateEventPayout(input);
+  } catch {
+    return { error: "Payout calculation failed — check the payout settings for this distance." };
+  }
+
+  const incentivePools: IncentivePool[] = [];
+  if ((d.female_incentive_cents ?? 0) > 0 && payout.femaleIncentiveDivisions.length > 0) {
+    incentivePools.push({
+      key: "female",
+      title: "Female incentive",
+      variant: "female",
+      criteria: "female",
+      divisionCount: d.female_incentive_division_count ?? 1,
+      payoutDivisions: payout.femaleIncentiveDivisions,
+    });
+  }
+  if ((d.military_incentive_cents ?? 0) > 0 && payout.militaryIncentiveDivisions.length > 0) {
+    incentivePools.push({
+      key: "military",
+      title: "Military incentive",
+      variant: "military",
+      criteria: "military",
+      divisionCount: d.military_incentive_division_count ?? 1,
+      payoutDivisions: payout.militaryIncentiveDivisions,
+    });
+  }
+
+  // Adapter: the algorithm reads division counts + per-place amounts straight from
+  // the producer's payout calculation — money is never defined twice.
+  const toAmounts = (divs: DivisionPayoutResult[]) => {
+    const rec: Record<string, number[]> = {};
+    for (const dv of divs) {
+      rec[dv.label] = dv.places.filter((p) => p.amountCents > 0).map((p) => p.amountCents);
+    }
+    return rec;
+  };
+  const mainAmounts = toAmounts(payout.divisions);
+  const incentiveAmounts = incentivePools.map((p) => toAmounts(p.payoutDivisions));
+  const source: PayoutSource = {
+    numDivisions: (run = null) => (run == null ? divisionCount : incentivePools[run].divisionCount),
+    payout: (run = null) => (run == null ? mainAmounts : incentiveAmounts[run]),
+  };
+
+  const entries = rows.map(
+    (r) =>
+      new AlgorithmEntry(r.id, r.bib, r.first, r.last, r.age, r.sex, r.timeS, -1, "", fmtTime(r.timeS), r.military),
+  );
+  sortEntries(entries);
+
+  const preAlg = runPreAlgorithm(entries);
+
+  try {
+    const main = runAlgorithm(
+      entries,
+      { max_percentile: maxPercentile, min_percentile: minPercentile },
+      source,
+    );
+
+    const incentives = incentivePools.map((pool, i) => {
+      const subset = filterIncentiveEntries(entries, pool.criteria);
+      const result = runAlgorithm(
+        subset,
+        { max_percentile: maxPercentile, min_percentile: minPercentile },
+        source,
+        i,
+      );
+      return { ...pool, result };
+    });
+
+    let totalMainPaidCents = 0;
+    let totalIncentivePaidCents = 0;
+    entries.forEach((e) => {
+      totalMainPaidCents += e.payout;
+      totalIncentivePaidCents += e.incentivePayout1 + e.incentivePayout2 + e.incentivePayout3;
+    });
+
+    return {
+      finishers,
+      payoutByDivision: new Map(payout.divisions.map((dv) => [dv.label, dv])),
+      main,
+      incentives,
+      preAlgorithm: { low: preAlg.lowPercentileCutoff, high: preAlg.highPercentileCutoff },
+      totalMainPaidCents,
+      totalIncentivePaidCents,
+      warnings: payout.warnings,
+      entries,
+      shootoutFundCents: payout.shootoutFundCents,
+      shootoutFraction: Number(d.shootout_fraction ?? 0),
+      potEntryCount: input.entryCount,
+    };
+  } catch {
+    return { error: "Algorithm failed on this field — try different percentile cutoffs." };
+  }
+}

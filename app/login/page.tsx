@@ -44,10 +44,15 @@ function LoginForm() {
           Member Access
         </p>
         <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
-          Sign In
+          Sign In or Join
         </h1>
         <p className="mt-3 text-pretty text-[#1E3A5F]/75">
           Enter your email and we&apos;ll send you a magic link—no password to remember.
+        </p>
+        <p className="mt-2 text-pretty text-sm text-[#1E3A5F]/65">
+          <strong className="font-semibold text-[#1E3A5F]/80">New to Peer Racing?</strong> Same box
+          — click the link in your email and we&apos;ll walk you through your racer profile and
+          membership.
         </p>
 
         <div className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm sm:p-8">

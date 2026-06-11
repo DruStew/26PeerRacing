@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
+import { EventNav } from "@/components/promoter/EventNav";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -54,6 +55,9 @@ export default async function PromoterKioskPage({ params }: { params: Promise<{ 
         >
           ← Edit event
         </Link>
+
+        <EventNav eventId={id} current="kiosk" />
+
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race Day</p>
         <h1 className="font-display mt-2 text-3xl font-bold text-[#1E3A5F]">Kiosk &amp; Terminals</h1>
         <p className="mt-2 text-sm text-[#1E3A5F]/75">{(event as { name: string }).name}</p>

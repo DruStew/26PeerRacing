@@ -6,33 +6,33 @@
  * amounts sourced from the producer's saved payout settings (lib/payout — money is
  * defined once, on the payout calculator).
  *
- * Currently previews with generated sample finishers; the finish-time import
- * (results pipeline) plugs real data into the same console.
+ * Runs on real finishers from the finish-time import when they exist; otherwise
+ * falls back to a generated sample field for exploring. Publish recomputes the same
+ * math server-side and writes results + badges.
  */
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import type { AlgorithmEntry } from "@/lib/algorithm";
 import {
-  AlgorithmEntry,
-  filterIncentiveEntries,
-  runAlgorithm,
-  runPreAlgorithm,
-  sortEntries,
-} from "@/lib/algorithm";
-import type { AlgorithmRunResult, PayoutSource } from "@/lib/algorithm";
-import { calculateEventPayout, defaultDistancePayoutSettings } from "@/lib/payout";
-import type {
-  DistancePayoutSettingsRow,
-  DivisionPayoutResult,
-  PayoutCalculationInput,
-} from "@/lib/payout/types";
+  computeConsoleResults,
+  fmtTime,
+  MIN_FINISHERS,
+  type ConsoleComputation,
+  type FinisherInput,
+} from "@/lib/results-console/compute";
+import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
 import { DivisionBadge, DIVISION_COLORS } from "@/components/results/DivisionBadge";
-import type { BadgeVariant } from "@/components/results/DivisionBadge";
-
-const DIVISION_NAMES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"] as const;
-const SCHEDULE_PLACES_TO_PAY = 12;
 
 type DistanceOption = { id: string; label: string; entry_fee_cents: number };
+
+type RealFinisher = FinisherInput & {
+  entryId: string;
+  userId: string | null;
+  prId: string | null;
+  timeMs: number;
+};
 
 type SampleRow = {
   id: string;
@@ -88,36 +88,7 @@ function fmtUsd(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
 }
 
-function fmtTime(totalSeconds: number) {
-  const s = Math.round(totalSeconds);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-}
-
 const fmtHours = (h: number) => fmtTime(h * 3600);
-
-type IncentivePool = {
-  key: "female" | "military";
-  title: string;
-  variant: BadgeVariant;
-  criteria: "female" | "military";
-  divisionCount: number;
-  payoutDivisions: DivisionPayoutResult[];
-};
-
-type ConsoleComputation = {
-  finishers: number;
-  payoutByDivision: Map<string, DivisionPayoutResult>;
-  main: AlgorithmRunResult;
-  incentives: (IncentivePool & { result: AlgorithmRunResult })[];
-  preAlgorithm: { low: number; high: number };
-  totalMainPaidCents: number;
-  totalIncentivePaidCents: number;
-  warnings: string[];
-  entries: AlgorithmEntry[];
-};
 
 const inputClass =
   "mt-1 w-full rounded-lg border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25";
@@ -136,10 +107,19 @@ export function ResultsConsoleClient({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [realFinishers, setRealFinishers] = useState<RealFinisher[]>([]);
+  const [registeredEntryCount, setRegisteredEntryCount] = useState(0);
+  const [importedRowCount, setImportedRowCount] = useState(0);
+  const [resultsPublishedAt, setResultsPublishedAt] = useState<string | null>(null);
+
   const [sampleSize, setSampleSize] = useState(100);
   const [seed, setSeed] = useState(42);
   const [minPercentile, setMinPercentile] = useState(5);
   const [maxPercentile, setMaxPercentile] = useState(95);
+
+  const [publishing, setPublishing] = useState(false);
+  const [publishNotice, setPublishNotice] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   const loadDistance = useCallback(async () => {
     if (!selectedDistanceId) {
@@ -148,11 +128,16 @@ export function ResultsConsoleClient({
     }
     setLoading(true);
     setLoadError(null);
+    setPublishNotice(null);
+    setPublishError(null);
     try {
-      const res = await fetch(
-        `/api/promoter/events/${eventId}/payout?distanceId=${encodeURIComponent(selectedDistanceId)}`,
-      );
-      const json = (await res.json()) as {
+      const [payoutRes, dataRes] = await Promise.all([
+        fetch(`/api/promoter/events/${eventId}/payout?distanceId=${encodeURIComponent(selectedDistanceId)}`),
+        fetch(`/api/promoter/events/${eventId}/results-data?distanceId=${encodeURIComponent(selectedDistanceId)}`, {
+          cache: "no-store",
+        }),
+      ]);
+      const payoutJson = (await payoutRes.json()) as {
         ok?: boolean;
         error?: string;
         settings?: DistancePayoutSettingsRow | null;
@@ -160,15 +145,32 @@ export function ResultsConsoleClient({
         suggestedFeeCents?: number;
         distance?: { label: string };
       };
-      if (!res.ok || !json.ok) {
-        setLoadError(json.error ?? "Could not load payout settings");
+      if (!payoutRes.ok || !payoutJson.ok) {
+        setLoadError(payoutJson.error ?? "Could not load payout settings");
         return;
       }
-      setSettings(json.settings ?? null);
-      setLiveFeeCents(json.suggestedFeeCents ?? 0);
-      if (json.distance?.label) setSelectedLabel(json.distance.label);
-      const live = json.suggestedEntryCount ?? 0;
+      setSettings(payoutJson.settings ?? null);
+      setLiveFeeCents(payoutJson.suggestedFeeCents ?? 0);
+      if (payoutJson.distance?.label) setSelectedLabel(payoutJson.distance.label);
+      const live = payoutJson.suggestedEntryCount ?? 0;
       setSampleSize(live >= 10 ? live : 100);
+
+      const dataJson = (await dataRes.json()) as {
+        ok?: boolean;
+        error?: string;
+        finishers?: RealFinisher[];
+        importedRowCount?: number;
+        registeredEntryCount?: number;
+        resultsPublishedAt?: string | null;
+      };
+      if (!dataRes.ok || !dataJson.ok) {
+        setLoadError(dataJson.error ?? "Could not load imported finish times");
+        return;
+      }
+      setRealFinishers(dataJson.finishers ?? []);
+      setImportedRowCount(dataJson.importedRowCount ?? 0);
+      setRegisteredEntryCount(dataJson.registeredEntryCount ?? 0);
+      setResultsPublishedAt(dataJson.resultsPublishedAt ?? null);
     } catch {
       setLoadError("Network error");
     } finally {
@@ -180,153 +182,83 @@ export function ResultsConsoleClient({
     void loadDistance();
   }, [loadDistance]);
 
+  const realMode = realFinishers.length >= MIN_FINISHERS;
+
   const sampleRows = useMemo(
     () => generateSampleRows(Math.max(0, Math.min(1000, sampleSize)), seed),
     [sampleSize, seed],
   );
 
+  const fieldRows = useMemo<FinisherInput[]>(
+    () => (realMode ? realFinishers : sampleRows),
+    [realMode, realFinishers, sampleRows],
+  );
+
   const computation = useMemo<ConsoleComputation | { error: string } | null>(() => {
     if (loading) return null;
-    if (sampleRows.length < 5) {
-      return { error: "Need at least 5 finishers to compute divisions." };
-    }
+    return computeConsoleResults({
+      rows: fieldRows,
+      settings,
+      distanceId: selectedDistanceId,
+      liveFeeCents,
+      registeredEntryCount: realMode ? registeredEntryCount : null,
+      minPercentile,
+      maxPercentile,
+    });
+  }, [
+    loading,
+    fieldRows,
+    settings,
+    selectedDistanceId,
+    liveFeeCents,
+    realMode,
+    registeredEntryCount,
+    minPercentile,
+    maxPercentile,
+  ]);
 
-    const d = settings ?? {
-      ...defaultDistancePayoutSettings(selectedDistanceId),
-      entry_fee_cents_override: null,
-      entry_count_override: null,
-    };
-
-    const finishers = sampleRows.length;
-    const femaleCount = sampleRows.filter((r) => r.sex === "Female").length;
-    const militaryCount = sampleRows.filter((r) => r.military).length;
-    const feeCents = d.entry_fee_cents_override ?? liveFeeCents;
-    const divisionCount = Math.min(5, Math.max(1, d.division_count));
-    const divisionLabels = [...DIVISION_NAMES.slice(0, divisionCount)];
-
-    const input: PayoutCalculationInput = {
-      entryCount: d.entry_count_override ?? finishers,
-      entryFeeCents: feeCents,
-      processingFeeFraction: Number(d.processing_fee_fraction),
-      prHoldingFraction: Number(d.pr_holding_fraction),
-      producerFractionOfPrHolding: Number(d.producer_fraction_of_pr_holding),
-      trueAddedMoneyCents: d.true_added_money_cents,
-      femaleIncentiveFromRacersPotCents: d.female_incentive_cents ?? 0,
-      femaleIncentiveDivisionCount: d.female_incentive_division_count ?? 1,
-      femaleIncentivePlacesToPay: d.female_incentive_places_to_pay ?? 12,
-      femaleIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, d.female_incentive_division_count ?? 1)],
-      femaleIncentiveScheduleMode: d.female_incentive_schedule_mode ?? "auto",
-      femaleIncentiveManualBracket: d.female_incentive_manual_bracket ?? undefined,
-      femaleIncentiveBracketEntryCount: femaleCount,
-      militaryIncentiveFromRacersPotCents: d.military_incentive_cents ?? 0,
-      militaryIncentiveDivisionCount: d.military_incentive_division_count ?? 1,
-      militaryIncentivePlacesToPay: d.military_incentive_places_to_pay ?? 12,
-      militaryIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, d.military_incentive_division_count ?? 1)],
-      militaryIncentiveScheduleMode: d.military_incentive_schedule_mode ?? "auto",
-      militaryIncentiveManualBracket: d.military_incentive_manual_bracket ?? undefined,
-      militaryIncentiveBracketEntryCount: militaryCount,
-      eliteDivisionCarveFromPoolCents: d.elite_division_carve_cents,
-      divisionCount,
-      eliteDivisionIndex: Math.min(divisionCount - 1, Math.max(0, d.elite_division_index)),
-      scheduleMode: d.schedule_mode,
-      manualBracket: d.manual_bracket ?? undefined,
-      placesToPay: SCHEDULE_PLACES_TO_PAY,
-      divisionLabels,
-    };
-
-    let payout;
+  async function publish(action: "publish" | "unpublish") {
+    setPublishing(true);
+    setPublishError(null);
+    setPublishNotice(null);
     try {
-      payout = calculateEventPayout(input);
-    } catch {
-      return { error: "Payout calculation failed — check the payout settings for this distance." };
-    }
-
-    const incentivePools: IncentivePool[] = [];
-    if ((d.female_incentive_cents ?? 0) > 0 && payout.femaleIncentiveDivisions.length > 0) {
-      incentivePools.push({
-        key: "female",
-        title: "Female incentive",
-        variant: "female",
-        criteria: "female",
-        divisionCount: d.female_incentive_division_count ?? 1,
-        payoutDivisions: payout.femaleIncentiveDivisions,
+      const res = await fetch(`/api/promoter/events/${eventId}/results-publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          distance_id: selectedDistanceId,
+          action,
+          min_percentile: minPercentile,
+          max_percentile: maxPercentile,
+        }),
       });
-    }
-    if ((d.military_incentive_cents ?? 0) > 0 && payout.militaryIncentiveDivisions.length > 0) {
-      incentivePools.push({
-        key: "military",
-        title: "Military incentive",
-        variant: "military",
-        criteria: "military",
-        divisionCount: d.military_incentive_division_count ?? 1,
-        payoutDivisions: payout.militaryIncentiveDivisions,
-      });
-    }
-
-    // Adapter: the algorithm reads division counts + per-place amounts straight from
-    // the producer's payout calculation — money is never defined twice.
-    const toAmounts = (divs: DivisionPayoutResult[]) => {
-      const rec: Record<string, number[]> = {};
-      for (const dv of divs) {
-        rec[dv.label] = dv.places.filter((p) => p.amountCents > 0).map((p) => p.amountCents);
-      }
-      return rec;
-    };
-    const mainAmounts = toAmounts(payout.divisions);
-    const incentiveAmounts = incentivePools.map((p) => toAmounts(p.payoutDivisions));
-    const source: PayoutSource = {
-      numDivisions: (run = null) => (run == null ? divisionCount : incentivePools[run].divisionCount),
-      payout: (run = null) => (run == null ? mainAmounts : incentiveAmounts[run]),
-    };
-
-    const entries = sampleRows.map(
-      (r) =>
-        new AlgorithmEntry(r.id, r.bib, r.first, r.last, r.age, r.sex, r.timeS, -1, "", fmtTime(r.timeS), r.military),
-    );
-    sortEntries(entries);
-
-    const preAlg = runPreAlgorithm(entries);
-
-    try {
-      const main = runAlgorithm(
-        entries,
-        { max_percentile: maxPercentile, min_percentile: minPercentile },
-        source,
-      );
-
-      const incentives = incentivePools.map((pool, i) => {
-        const subset = filterIncentiveEntries(entries, pool.criteria);
-        const result = runAlgorithm(
-          subset,
-          { max_percentile: maxPercentile, min_percentile: minPercentile },
-          source,
-          i,
-        );
-        return { ...pool, result };
-      });
-
-      let totalMainPaidCents = 0;
-      let totalIncentivePaidCents = 0;
-      entries.forEach((e) => {
-        totalMainPaidCents += e.payout;
-        totalIncentivePaidCents += e.incentivePayout1 + e.incentivePayout2 + e.incentivePayout3;
-      });
-
-      return {
-        finishers,
-        payoutByDivision: new Map(payout.divisions.map((dv) => [dv.label, dv])),
-        main,
-        incentives,
-        preAlgorithm: { low: preAlg.lowPercentileCutoff, high: preAlg.highPercentileCutoff },
-        totalMainPaidCents,
-        totalIncentivePaidCents,
-        warnings: payout.warnings,
-        entries,
+      const json = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        publishedAt?: string;
+        summary?: { resultsWritten: number; badgesAwarded: number };
       };
-    } catch {
-      return { error: "Algorithm failed on this field — try different percentile cutoffs." };
+      if (!res.ok || !json.ok) {
+        setPublishError(json.error ?? `Error ${res.status}`);
+        return;
+      }
+      if (action === "publish") {
+        setResultsPublishedAt(json.publishedAt ?? new Date().toISOString());
+        setPublishNotice(
+          json.summary
+            ? `Published — ${json.summary.resultsWritten} results written, ${json.summary.badgesAwarded} badges awarded.`
+            : "Published.",
+        );
+      } else {
+        setResultsPublishedAt(null);
+        setPublishNotice("Results unpublished — racer pages and badges for this distance are withdrawn.");
+      }
+    } catch (e) {
+      setPublishError(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setPublishing(false);
     }
-  }, [loading, sampleRows, settings, selectedDistanceId, liveFeeCents, minPercentile, maxPercentile]);
+  }
 
   if (distances.length === 0) {
     return (
@@ -341,10 +273,34 @@ export function ResultsConsoleClient({
 
   return (
     <div className="space-y-8">
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        <span className="font-semibold">Sample data preview.</span> Finishers below are generated so you can explore
-        the console. Importing real finish times is the next build step — this same console will run on them.
-      </div>
+      {realMode ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <span className="font-semibold">Live data.</span> Running on {realFinishers.length} matched finishers from
+          the imported timing file
+          {importedRowCount > realFinishers.length
+            ? ` (${importedRowCount - realFinishers.length} imported rows are unmatched, ignored, or non-finishes)`
+            : ""}
+          .{" "}
+          <Link
+            href={`/promoter/events/${eventId}/results/import`}
+            className="font-semibold text-emerald-900 underline underline-offset-2"
+          >
+            Review the import
+          </Link>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <span className="font-semibold">Sample data preview.</span> No imported finish times for {selectedLabel}{" "}
+          yet — finishers below are generated so you can explore the console.{" "}
+          <Link
+            href={`/promoter/events/${eventId}/results/import`}
+            className="font-semibold text-amber-950 underline underline-offset-2"
+          >
+            Import finish times
+          </Link>{" "}
+          to run on real data.
+        </div>
+      )}
 
       {/* controls */}
       <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
@@ -367,17 +323,24 @@ export function ResultsConsoleClient({
               ))}
             </select>
           </label>
-          <label className="block text-sm font-medium text-[#1E3A5F]">
-            Sample finishers
-            <input
-              type="number"
-              min={5}
-              max={1000}
-              className={`${inputClass} tabular-nums`}
-              value={sampleSize}
-              onChange={(e) => setSampleSize(Math.max(0, Number(e.target.value) || 0))}
-            />
-          </label>
+          {realMode ? (
+            <div className="block text-sm font-medium text-[#1E3A5F]">
+              Matched finishers
+              <p className={`${inputClass} bg-[#fafbfc] tabular-nums`}>{realFinishers.length}</p>
+            </div>
+          ) : (
+            <label className="block text-sm font-medium text-[#1E3A5F]">
+              Sample finishers
+              <input
+                type="number"
+                min={5}
+                max={1000}
+                className={`${inputClass} tabular-nums`}
+                value={sampleSize}
+                onChange={(e) => setSampleSize(Math.max(0, Number(e.target.value) || 0))}
+              />
+            </label>
+          )}
           <label className="block text-sm font-medium text-[#1E3A5F]">
             Slow-end cutoff (max percentile)
             <input
@@ -402,13 +365,15 @@ export function ResultsConsoleClient({
           </label>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            className="rounded-md border border-[#1E3A5F]/25 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] hover:text-[#E87722]"
-            onClick={() => setSeed(Math.floor(Math.random() * 1_000_000))}
-          >
-            Shuffle sample field
-          </button>
+          {!realMode ? (
+            <button
+              type="button"
+              className="rounded-md border border-[#1E3A5F]/25 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] hover:text-[#E87722]"
+              onClick={() => setSeed(Math.floor(Math.random() * 1_000_000))}
+            >
+              Shuffle sample field
+            </button>
+          ) : null}
           {comp ? (
             <span className="text-xs text-[#1E3A5F]/70">
               Pre-algorithm outlier scan suggests cutoffs{" "}
@@ -465,7 +430,7 @@ export function ResultsConsoleClient({
             <div className="mt-4 flex flex-wrap items-end gap-6">
               {[...comp.main.winners.keys()].map((div, i) => (
                 <div key={div} className="flex flex-col items-center gap-1">
-                  <DivisionBadge division={div} size={76} />
+                  <DivisionBadge division={div} size={76} small />
                   <span className="text-xs font-medium text-[#1E3A5F]/70">
                     {comp.main.winners.get(div)?.length ?? 0} runners
                   </span>
@@ -474,7 +439,7 @@ export function ResultsConsoleClient({
               {comp.incentives.map((pool) =>
                 [...pool.result.winners.keys()].map((div, i) => (
                   <div key={`${pool.key}-${div}`} className="flex flex-col items-center gap-1">
-                    <DivisionBadge division={div} variant={pool.variant} size={64} />
+                    <DivisionBadge division={div} variant={pool.variant} size={64} small />
                     <span className="text-xs font-medium text-[#1E3A5F]/70">
                       {pool.title} · {pool.result.winners.get(div)?.length ?? 0}
                     </span>
@@ -486,7 +451,7 @@ export function ResultsConsoleClient({
 
           {/* summary + timeline */}
           <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1E3A5F]/55">Finishers</p>
                 <p className="font-display mt-1 text-2xl font-bold text-[#1E3A5F]">{comp.finishers}</p>
@@ -503,6 +468,12 @@ export function ResultsConsoleClient({
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1E3A5F]/55">Incentive payouts</p>
                 <p className="font-display mt-1 text-2xl font-bold text-[#1E3A5F]">
                   {fmtUsd(comp.totalIncentivePaidCents)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[#E87722]/30 bg-[#E87722]/5 px-3 py-2 sm:col-span-2 lg:col-span-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#E87722]">Total payout</p>
+                <p className="font-display mt-1 text-2xl font-bold text-[#1E3A5F]">
+                  {fmtUsd(comp.totalMainPaidCents + comp.totalIncentivePaidCents)}
                 </p>
               </div>
             </div>
@@ -529,7 +500,7 @@ export function ResultsConsoleClient({
                 return (
                   <div key={div} className="rounded-xl border border-[#1E3A5F]/10 bg-white p-5 shadow-sm">
                     <div className="flex items-center gap-4">
-                      <DivisionBadge division={div} size={56} />
+                      <DivisionBadge division={div} size={56} small />
                       <div>
                         <p className="font-display text-base font-semibold text-[#1E3A5F]">{div}</p>
                         <p className="text-xs text-[#1E3A5F]/60">
@@ -562,7 +533,7 @@ export function ResultsConsoleClient({
                   return (
                     <div key={div} className="rounded-xl border border-[#1E3A5F]/10 bg-white p-5 shadow-sm">
                       <div className="flex items-center gap-4">
-                        <DivisionBadge division={div} variant={pool.variant} size={56} />
+                        <DivisionBadge division={div} variant={pool.variant} size={56} small />
                         <div>
                           <p className="font-display text-base font-semibold text-[#1E3A5F]">
                             {div} <span className="text-xs font-normal text-[#1E3A5F]/55">({pool.title})</span>
@@ -589,24 +560,70 @@ export function ResultsConsoleClient({
           {/* full finisher list */}
           <FullFinisherList comp={comp} raceLabel={selectedLabel} />
 
-          {/* publish (pipeline next) */}
+          {/* publish */}
           <section className="rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="font-display text-base font-semibold text-[#1E3A5F]">Publish results</p>
-                <p className="mt-1 max-w-xl text-xs text-[#1E3A5F]/65">
-                  Publishing locks divisions and payouts, awards badges to each racer&apos;s trophy case, and opens the
-                  gamified results pages. Arrives with the finish-time import in the results pipeline.
+                <p className="font-display text-base font-semibold text-[#1E3A5F]">
+                  Publish results — {selectedLabel}
                 </p>
+                <p className="mt-1 max-w-xl text-xs text-[#1E3A5F]/65">
+                  {realMode
+                    ? "Publishing recomputes divisions and payouts on the server from the imported finish times and your saved payout settings, writes the official results, and awards badges to each racer's trophy case."
+                    : "Publish unlocks once real finish times are imported for this distance — sample fields can't be published."}
+                </p>
+                {resultsPublishedAt ? (
+                  <p className="mt-2 text-xs font-semibold text-emerald-800">
+                    Published {new Date(resultsPublishedAt).toLocaleString()}. Re-publishing replaces the live
+                    results.
+                  </p>
+                ) : null}
               </div>
-              <button
-                type="button"
-                disabled
-                className="cursor-not-allowed rounded-lg bg-[#1E3A5F]/30 px-5 py-2.5 text-sm font-semibold text-white"
-              >
-                Publish (coming with import)
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                {resultsPublishedAt ? (
+                  <button
+                    type="button"
+                    disabled={publishing}
+                    onClick={() => void publish("unpublish")}
+                    className="rounded-lg border border-red-300 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Unpublish
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!realMode || publishing}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        resultsPublishedAt
+                          ? "Re-publish results for this distance? The current live results will be replaced."
+                          : "Publish results for this distance? Racers will see their division, place, payout, and badge.",
+                      )
+                    ) {
+                      void publish("publish");
+                    }
+                  }}
+                  className={`rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-colors ${
+                    realMode
+                      ? "bg-[#E87722] hover:bg-[#E87722]/90"
+                      : "cursor-not-allowed bg-[#1E3A5F]/30"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {publishing ? "Publishing…" : resultsPublishedAt ? "Re-publish results" : "Publish results"}
+                </button>
+              </div>
             </div>
+            {publishError ? (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+                {publishError}
+              </p>
+            ) : null}
+            {publishNotice ? (
+              <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                {publishNotice}
+              </p>
+            ) : null}
           </section>
         </>
       ) : null}
@@ -845,31 +862,38 @@ function DivisionTimeline({ comp }: { comp: ConsoleComputation }) {
   const bands = divisionNames.map((name, i) => {
     const start = comp.main.divisionsH[i];
     const end = comp.main.divisionsH[i + 1] ?? maxH;
-    return { name, start, end };
+    const runners = comp.main.winners.get(name)?.length ?? 0;
+    const widthPct = ((Math.min(end, maxH) - start) / span) * 100;
+    return { name, start, end, runners, widthPct: Math.max(widthPct, 0.5) };
   });
 
   return (
-    <div className="mt-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1E3A5F]/55">
-        Field timeline — division bands
-      </p>
-      <svg viewBox="0 0 800 84" className="mt-2 w-full" role="img" aria-label="Division bands across finish times">
+    <div className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-white p-4 sm:p-5">
+      <p className="text-sm font-semibold text-[#1E3A5F]">Field timeline</p>
+      <p className="mt-0.5 text-xs text-[#1E3A5F]/65">How finishers spread across division bands</p>
+
+      {/* Visual-only chart: bands, dots, and axis — no labels on the timeline itself. */}
+      <svg
+        viewBox="0 0 800 52"
+        className="mt-4 w-full"
+        role="img"
+        aria-label="Division bands across finish times"
+      >
         {bands.map((b) => {
           const c = DIVISION_COLORS[b.name] ?? DIVISION_COLORS.Echo;
+          const bx = x(b.start);
           return (
             <g key={b.name}>
               <rect
-                x={x(b.start)}
-                y={18}
-                width={Math.max(x(Math.min(b.end, maxH)) - x(b.start), 2)}
-                height={36}
+                x={bx}
+                y={8}
+                width={Math.max(x(Math.min(b.end, maxH)) - bx, 2)}
+                height={32}
                 fill={c.base}
-                opacity={0.22}
+                opacity={0.2}
+                rx={2}
               />
-              <line x1={x(b.start)} y1={14} x2={x(b.start)} y2={58} stroke={c.dark} strokeWidth={1.5} />
-              <text x={x(b.start) + 4} y={12} fontSize={10} fill="#1E3A5F" opacity={0.75}>
-                {b.name} · {fmtHours(b.start)}
-              </text>
+              <line x1={bx} y1={6} x2={bx} y2={42} stroke={c.dark} strokeWidth={1.25} opacity={0.55} />
             </g>
           );
         })}
@@ -877,22 +901,68 @@ function DivisionTimeline({ comp }: { comp: ConsoleComputation }) {
           <circle
             key={e.id}
             cx={x(e.timeH())}
-            cy={36 + ((i * 7919) % 13) - 6}
-            r={2.2}
+            cy={24 + ((i * 7919) % 11) - 5}
+            r={2.4}
             fill={e.payout > 0 ? "#E87722" : "#1E3A5F"}
-            opacity={e.payout > 0 ? 0.95 : 0.45}
+            opacity={e.payout > 0 ? 0.95 : 0.4}
           />
         ))}
-        <line x1={24} y1={62} x2={776} y2={62} stroke="#1E3A5F" strokeWidth={1} opacity={0.3} />
-        <text x={24} y={78} fontSize={10} fill="#1E3A5F" opacity={0.6}>
+        <line x1={24} y1={44} x2={776} y2={44} stroke="#1E3A5F" strokeWidth={1} opacity={0.2} />
+        <text x={24} y={52} fontSize={10} fill="#1E3A5F" opacity={0.7}>
           {fmtHours(minH)}
         </text>
-        <text x={776} y={78} fontSize={10} fill="#1E3A5F" opacity={0.6} textAnchor="end">
+        <text x={776} y={52} fontSize={10} fill="#1E3A5F" opacity={0.7} textAnchor="end">
           {fmtHours(maxH)}
         </text>
       </svg>
-      <p className="mt-1 text-xs text-[#1E3A5F]/55">
-        Each dot is a finisher; orange dots are in the money. Band lines are the algorithm&apos;s division boundaries.
+
+      {/* Proportional color bar mirrors band widths on the timeline. */}
+      <div className="mt-3 flex h-2 overflow-hidden rounded-full ring-1 ring-[#1E3A5F]/10">
+        {bands.map((b) => {
+          const c = DIVISION_COLORS[b.name] ?? DIVISION_COLORS.Echo;
+          return (
+            <div
+              key={`bar-${b.name}`}
+              className="h-full min-w-[2px]"
+              style={{ width: `${b.widthPct}%`, backgroundColor: c.base }}
+              title={`${b.name}: ${fmtHours(b.start)} – ${fmtHours(Math.min(b.end, maxH))}`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Readable division chips — never overlap, full cutoff + count. */}
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {bands.map((b) => {
+          const c = DIVISION_COLORS[b.name] ?? DIVISION_COLORS.Echo;
+          return (
+            <div
+              key={`chip-${b.name}`}
+              className="rounded-lg border px-3 py-2.5"
+              style={{ borderColor: `${c.base}55`, backgroundColor: `${c.base}12` }}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-white"
+                  style={{ backgroundColor: c.base }}
+                  aria-hidden
+                />
+                <p className="text-sm font-semibold text-[#1E3A5F]">{b.name}</p>
+              </div>
+              <p className="mt-1 text-xs tabular-nums text-[#1E3A5F]/75">
+                from <span className="font-medium text-[#1E3A5F]">{fmtHours(b.start)}</span>
+              </p>
+              <p className="text-xs text-[#1E3A5F]/55">
+                {b.runners} {b.runners === 1 ? "finisher" : "finishers"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-3 text-xs leading-relaxed text-[#1E3A5F]/55">
+        Each dot is a finisher; orange dots are in the money. Division cutoffs and counts are listed below — nothing is
+        drawn on top of the timeline.
       </p>
     </div>
   );

@@ -67,6 +67,122 @@ export async function PATCH(request: Request) {
     );
   }
 
+  // Duplicate guard: a race-day bib or transponder may only belong to ONE runner per event
+  // (the same runner may share it across their own entries, e.g. 10K + 5K roll-over).
+  if (assignedBib || t1 || t2) {
+    const { data: targetEntry } = await auth.admin
+      .from("entries")
+      .select("id,user_id,email")
+      .eq("id", entryId)
+      .eq("event_id", eventId)
+      .maybeSingle();
+    const target = targetEntry as { id: string; user_id: string | null; email: string | null } | null;
+    if (!target) {
+      return NextResponse.json({ ok: false, error: "Entry not found for this event" }, { status: 404 });
+    }
+
+    const { data: eventEntriesRaw } = await auth.admin
+      .from("entries")
+      .select("id,user_id,email,first_name,last_name,assigned_bib,transponder_1,transponder_2")
+      .eq("event_id", eventId);
+    type EvEntry = {
+      id: string;
+      user_id: string | null;
+      email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      assigned_bib: string | null;
+      transponder_1: string | null;
+      transponder_2: string | null;
+    };
+    const eventEntries = (eventEntriesRaw ?? []) as EvEntry[];
+
+    const targetEmail = target.email?.trim().toLowerCase() ?? "";
+    const sameRunner = (e: EvEntry) => {
+      if (target.user_id && e.user_id === target.user_id) return true;
+      if (!target.user_id && !e.user_id && targetEmail && e.email?.trim().toLowerCase() === targetEmail) return true;
+      return e.id === target.id;
+    };
+
+    const norm = (v: string | null | undefined) => v?.trim().toLowerCase() ?? "";
+
+    const runnerName = async (e: EvEntry): Promise<string> => {
+      if (e.user_id) {
+        const { data: prof } = await auth.admin
+          .from("profiles")
+          .select("first_name,last_name")
+          .eq("id", e.user_id)
+          .maybeSingle();
+        const p = prof as { first_name?: string | null; last_name?: string | null } | null;
+        const n = `${p?.first_name ?? ""} ${p?.last_name ?? ""}`.trim();
+        if (n) return n;
+      }
+      const n = `${e.first_name ?? ""} ${e.last_name ?? ""}`.trim();
+      return n || "another runner";
+    };
+
+    if (assignedBib) {
+      const bibNorm = norm(assignedBib);
+      const clash = eventEntries.find((e) => !sameRunner(e) && norm(e.assigned_bib) === bibNorm);
+      if (clash) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Sorry — bib #${assignedBib} for this event is already assigned to ${await runnerName(clash)}.`,
+            conflictField: "assignedBib",
+          },
+          { status: 409 },
+        );
+      }
+
+      // A race-day bib must also never collide with another entrant's lifetime PR ID.
+      const otherUserIds = [...new Set(eventEntries.filter((e) => !sameRunner(e) && e.user_id).map((e) => e.user_id))];
+      if (otherUserIds.length > 0) {
+        const { data: prClashRaw } = await auth.admin
+          .from("profiles")
+          .select("first_name,last_name,pr_id")
+          .in("id", otherUserIds as string[])
+          .eq("pr_id", assignedBib.trim())
+          .limit(1);
+        const prClash = (prClashRaw ?? [])[0] as
+          | { first_name?: string | null; last_name?: string | null; pr_id?: string | null }
+          | undefined;
+        if (prClash) {
+          const n = `${prClash.first_name ?? ""} ${prClash.last_name ?? ""}`.trim() || "another runner";
+          return NextResponse.json(
+            {
+              ok: false,
+              error: `Sorry — #${assignedBib} is ${n}'s lifetime PR ID and can't be used as a race-day bib at this event.`,
+              conflictField: "assignedBib",
+            },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
+    for (const [label, value] of [
+      ["transponder 1", t1],
+      ["transponder 2", t2],
+    ] as const) {
+      if (!value) continue;
+      const vNorm = norm(value);
+      const clash = eventEntries.find(
+        (e) => !sameRunner(e) && (norm(e.transponder_1) === vNorm || norm(e.transponder_2) === vNorm),
+      );
+      if (clash) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Sorry — ${label} "${value}" for this event is already assigned to ${await runnerName(clash)}.`,
+            conflictField: label === "transponder 1" ? "transponder1" : "transponder2",
+          },
+          { status: 409 },
+        );
+      }
+    }
+  }
+
   // Confirm check-in updates kiosk_checked_in_at via Postgres RPC so we are not blocked by PostgREST’s
   // *entries* schema cache (common right after adding a column, before reload). The UPDATE runs in the DB.
   let data: Record<string, unknown> | null = null;

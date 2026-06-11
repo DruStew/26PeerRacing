@@ -100,8 +100,12 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
   const [t1, setT1] = useState("");
   const [t2, setT2] = useState("");
   const [assignedRaceBib, setAssignedRaceBib] = useState("");
+  /** Which number is on the runner's chest: lifetime PR ID or an event-specific race-day bib. */
+  const [bibMode, setBibMode] = useState<"pr" | "raceday">("raceday");
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const [savePending, setSavePending] = useState(false);
+  /** Conflict/save error shown in red inside the timing panel (e.g. duplicate bib). */
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [addPending, setAddPending] = useState(false);
@@ -138,10 +142,13 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
     return [...byKey.values()];
   }, [searchRows]);
 
+  /** Monotonic counter so stale (out-of-order) live-search responses never overwrite newer ones. */
+  const searchSeqRef = useRef(0);
+
   const search = useCallback(async () => {
+    const seq = ++searchSeqRef.current;
     setError(null);
     setPending(true);
-    setSearchRows(null);
     setRunner(null);
     setSelectedUserId(null);
     setSelectedGroupKey(null);
@@ -154,17 +161,32 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
         body: JSON.stringify({ eventId, q }),
       });
       const json = (await res.json()) as { ok?: boolean; results?: SearchRow[]; error?: string };
+      if (seq !== searchSeqRef.current) return;
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Search failed");
         return;
       }
       setSearchRows(json.results ?? []);
     } catch {
-      setError("Network error");
+      if (seq === searchSeqRef.current) setError("Network error");
     } finally {
-      setPending(false);
+      if (seq === searchSeqRef.current) setPending(false);
     }
   }, [eventId, q]);
+
+  /** Live search-as-you-type: results update ~250ms after the kiosk operator stops typing. */
+  useEffect(() => {
+    if (runnerModalOpen) return;
+    const trimmed = q.trim();
+    if (trimmed.length < 2) {
+      searchSeqRef.current++;
+      setSearchRows(null);
+      setPending(false);
+      return;
+    }
+    const timer = setTimeout(() => void search(), 250);
+    return () => clearTimeout(timer);
+  }, [q, search, runnerModalOpen]);
 
   const loadRunner = useCallback(
     async (opts: {
@@ -265,13 +287,18 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
     if (!e || isCarryOverEntry(e)) return;
     setT1(e.transponder_1 ?? "");
     setT2(e.transponder_2 ?? "");
-    setAssignedRaceBib(e.assigned_bib?.trim() ?? "");
+    const bib = e.assigned_bib?.trim() ?? "";
+    setAssignedRaceBib(bib);
+    const prId = runner.profile.pr_id?.trim() ?? "";
+    setBibMode(prId && bib === prId ? "pr" : "raceday");
+    setSaveError(null);
   }, [activeEntryId, runner]);
 
   async function saveTransponders() {
     if (!activeEntryId) return;
     setSavePending(true);
     setError(null);
+    setSaveError(null);
     try {
       const res = await fetch("/api/kiosk/check-in/entry", {
         method: "PATCH",
@@ -294,12 +321,12 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
         };
       };
       if (!res.ok || !json.ok) {
-        setError(json.error ?? "Could not save");
+        setSaveError(json.error ?? "Could not save");
         return;
       }
       if (selectedUserId) await loadRunner({ userId: selectedUserId });
     } catch {
-      setError("Network error");
+      setSaveError("Network error");
     } finally {
       setSavePending(false);
     }
@@ -438,13 +465,19 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
 
   const hasCarryOverSplit = Boolean(runner?.entries.some((e) => isCarryOverEntry(e)));
   const activeEntry = runner?.entries.find((e) => e.id === activeEntryId) ?? null;
-  const activePrimaryForBib =
-    activeEntry && !isCarryOverEntry(activeEntry) ? activeEntry : null;
-  const heroPrimaryBib =
-    activePrimaryForBib?.assigned_bib?.trim() || displayBib;
-  const heroBibCaption = activePrimaryForBib?.assigned_bib?.trim()
-    ? "Assigned race bib (this distance)"
-    : "Peer Racing ID / on-file bib";
+
+  /** PR ID is the runner's identity and never leaves the hero card. */
+  const heroPrId = runner?.profile.pr_id?.trim() || null;
+  /** Race-day bib(s) assigned for this event (normally one number shared across the weekend). */
+  const heroRaceDayBibs = [
+    ...new Set(
+      (runner?.entries ?? [])
+        .map((e) => e.assigned_bib?.trim())
+        .filter((b): b is string => Boolean(b && b !== heroPrId)),
+    ),
+  ];
+  /** Fallback identity number when the profile has no PR ID (legacy/on-file bib). */
+  const heroFallbackBib = heroPrId ? null : displayBib;
 
   useEffect(() => {
     if (activeEntry && isCarryOverEntry(activeEntry)) {
@@ -578,12 +611,30 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
               {runner ? (
         <div className="space-y-8">
           <div className="rounded-2xl border-2 border-[#1E3A5F]/15 bg-white p-6 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1E3A5F]/55">{heroBibCaption}</p>
-            <p className="font-display mt-2 text-5xl font-bold tabular-nums text-[#1E3A5F]">{heroPrimaryBib}</p>
-            <p className="mt-2 text-lg font-semibold text-[#1E3A5F]">
+            <p className="text-xl font-bold text-[#1E3A5F] sm:text-2xl">
               {runner.profile.first_name} {runner.profile.last_name}
             </p>
             <p className="mt-1 text-sm text-[#1E3A5F]/65">{runner.profile.email}</p>
+            <div className="mt-4 flex flex-wrap items-stretch justify-center gap-3">
+              <div className="min-w-[10rem] rounded-xl bg-[#1E3A5F] px-5 py-3 text-white">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/65">
+                  Peer Racing ID · lifetime
+                </p>
+                <p className="font-display mt-1 text-4xl font-bold tabular-nums text-[#E87722]">
+                  {heroPrId ?? heroFallbackBib ?? "—"}
+                </p>
+              </div>
+              {heroRaceDayBibs.length > 0 ? (
+                <div className="min-w-[10rem] rounded-xl border-2 border-[#E87722]/50 bg-[#fff8f3] px-5 py-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/55">
+                    Race-day bib · this event
+                  </p>
+                  <p className="font-display mt-1 text-4xl font-bold tabular-nums text-[#1E3A5F]">
+                    {heroRaceDayBibs.join(" · ")}
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div>
@@ -698,27 +749,81 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                   transponder row for splits.
                 </p>
               ) : null}
-              <label className="mt-4 block">
-                <span className="text-sm font-medium text-[#1E3A5F]">Assigned race bib #</span>
-                <input
-                  type="text"
-                  value={assignedRaceBib}
-                  onChange={(e) => setAssignedRaceBib(e.target.value)}
-                  className="mt-2 w-full max-w-md rounded-lg border border-[#1E3A5F]/20 px-3 py-2 font-mono text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
-                  placeholder="Host / timing bib (this distance only)"
-                  autoComplete="off"
-                />
-                <span className="mt-1 block text-xs text-[#1E3A5F]/55">
-                  Searchable on this check-in screen. Leave blank to use only Peer Racing ID / on-file bib.
-                </span>
-              </label>
+              <div className="mt-4">
+                <span className="text-sm font-medium text-[#1E3A5F]">Which number is this runner wearing?</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={!runner.profile.pr_id?.trim()}
+                    onClick={() => {
+                      const prId = runner.profile.pr_id?.trim() ?? "";
+                      if (!prId) return;
+                      setBibMode("pr");
+                      setAssignedRaceBib(prId);
+                      setSaveError(null);
+                    }}
+                    className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      bibMode === "pr"
+                        ? "bg-[#1E3A5F] text-white"
+                        : "border border-[#1E3A5F]/25 bg-white text-[#1E3A5F] hover:border-[#E87722]"
+                    }`}
+                  >
+                    PR ID{runner.profile.pr_id?.trim() ? ` (#${runner.profile.pr_id.trim()})` : " — none on file"}
+                    <span className="ml-1.5 text-xs font-normal opacity-75">lifetime</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBibMode("raceday");
+                      const prId = runner.profile.pr_id?.trim() ?? "";
+                      if (prId && assignedRaceBib.trim() === prId) setAssignedRaceBib("");
+                      setSaveError(null);
+                    }}
+                    className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+                      bibMode === "raceday"
+                        ? "bg-[#1E3A5F] text-white"
+                        : "border border-[#1E3A5F]/25 bg-white text-[#1E3A5F] hover:border-[#E87722]"
+                    }`}
+                  >
+                    Race-day bib #<span className="ml-1.5 text-xs font-normal opacity-75">this event only</span>
+                  </button>
+                </div>
+                {bibMode === "pr" ? (
+                  <p className="mt-2 text-sm text-[#1E3A5F]/75">
+                    Racing as <span className="font-mono font-semibold">#{runner.profile.pr_id?.trim()}</span> — their
+                    lifetime Peer Racing ID. Save below to lock it in for this race.
+                  </p>
+                ) : (
+                  <label className="mt-3 block">
+                    <span className="text-sm font-medium text-[#1E3A5F]">Assigned race bib #</span>
+                    <input
+                      type="text"
+                      value={assignedRaceBib}
+                      onChange={(e) => {
+                        setAssignedRaceBib(e.target.value);
+                        setSaveError(null);
+                      }}
+                      className="mt-2 w-full max-w-md rounded-lg border border-[#1E3A5F]/20 px-3 py-2 font-mono text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
+                      placeholder="Host / timing bib (this event only)"
+                      autoComplete="off"
+                    />
+                    <span className="mt-1 block text-xs text-[#1E3A5F]/55">
+                      One bib per runner for the whole event weekend — every other runner must have a different number.
+                      Leave blank to use only Peer Racing ID / on-file bib.
+                    </span>
+                  </label>
+                )}
+              </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <label className="block">
                   <span className="text-sm font-medium text-[#1E3A5F]">Transponder 1</span>
                   <input
                     type="text"
                     value={t1}
-                    onChange={(e) => setT1(e.target.value)}
+                    onChange={(e) => {
+                      setT1(e.target.value);
+                      setSaveError(null);
+                    }}
                     className="mt-2 w-full rounded-lg border border-[#1E3A5F]/20 px-3 py-2 font-mono text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
                     placeholder="Primary chip"
                     autoComplete="off"
@@ -729,13 +834,24 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                   <input
                     type="text"
                     value={t2}
-                    onChange={(e) => setT2(e.target.value)}
+                    onChange={(e) => {
+                      setT2(e.target.value);
+                      setSaveError(null);
+                    }}
                     className="mt-2 w-full rounded-lg border border-[#1E3A5F]/20 px-3 py-2 font-mono text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
                     placeholder="Optional"
                     autoComplete="off"
                   />
                 </label>
               </div>
+              {saveError ? (
+                <div
+                  className="mt-4 rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"
+                  role="alert"
+                >
+                  {saveError}
+                </div>
+              ) : null}
               <button
                 type="button"
                 disabled={savePending}

@@ -9,8 +9,8 @@ YOUR ITEMS (Dru)
    - Templates in components/share/ShareCardTemplates.tsx (5 slot layouts, same data shape)
    - Money always shown (transparency); 9:16 story format first, 1:1 feed later
 
-2. Resize division badge PNGs to ~1000px wide (same filenames, transparent background)
-   - Replace PR_Alpha.png ... PR_Echo.png in /public — currently 17,044px wide, slow to load
+2. [DONE] Resize division badge PNGs to ~1000px wide (same filenames, transparent background)
+   - PR_Alpha.png ... PR_Echo.png updated in /public (~1000w); no code changes needed
 
 3. Review the producer results console (localhost:3000 -> event -> Edit -> Results console)
    - Runs on sample data for now; give feedback on layout, badges, controls, finisher list
@@ -20,20 +20,32 @@ BUILD QUEUE (with Cursor) — RESULTS PIPELINE
 --------------------------------------------
 Next session, start here. Order matters:
 
-4. Schema migration (results pipeline, step 1)
-   - Upgrade results table: add user_id, distance_id, division, division_place,
-     payout_cents, incentive division/place/payout columns, published state
-   - Wire badges table for awarding at publish (trophy case data)
-   - RLS: racers see own results; public sees published; promoter/admin manage
-   - Push with npm run db:push after writing
+4. [DONE] Schema migration (results pipeline, step 1)
+   - results: user_id, distance_id, division, division_place, payout_cents,
+     female/military incentive division+place+payout, published flag
+   - badges: distance_id, result_id, division, payout snapshot, no-dupe index
+   - results_raw: distance_id, import batch, matched_entry_id, match_status
+   - distances: results_published_at (publish per distance)
+   - RLS: public/racers see published rows only; promoter/admin full manage
+   - Pushed to Supabase (20260610120000_results_pipeline_schema.sql)
 
-5. Finish-time import (step 2)
-   - Producer uploads timing CSV -> results_raw -> match to entries by bib / PR ID / assigned_bib
-   - Unmatched-row review screen (typos, missing bibs)
+5. [DONE] Finish-time import (step 2)
+   - Producer uploads timing CSV at event -> Results console -> Import finish times
+   - Loose header detection (Chip/Net/Finish/Time; Bib/PR ID/Name), times as H:MM:SS,
+     MM:SS, or seconds; DNF/DNS rows flagged
+   - Auto-match priority: race-day assigned bib -> PR ID -> lifetime bib -> unique name
+     ("007" matches bib 7; "Last, First" handled)
+   - Review screen: manual match dropdown, ignore/restore, unmatch; dupes flagged
+   - Re-import replaces the previous file for that distance
 
-6. Wire results console to real data (step 3)
-   - Replace sample generator with imported finish times
-   - Activate Publish: locks divisions/payouts, awards badges, opens racer pages
+6. [DONE] Wire results console to real data (step 3)
+   - Console auto-runs on matched imported finish times when they exist
+     (sample generator stays as fallback when nothing is imported)
+   - Shared compute module: client preview and server publish run the exact
+     same code, so published numbers always equal the on-screen preview
+   - Publish live: server recomputes from imported times + saved payout settings,
+     writes results rows (division, place, payouts, incentives), awards badges,
+     stamps distance results_published_at; re-publish replaces; Unpublish wipes
 
 7. Racer-facing results + trophy case (step 4)
    - Gamified result page: badge earned, overall place, division place, money won
@@ -45,15 +57,25 @@ Next session, start here. Order matters:
    - Camera/photo -> canvas composite of Dru's card designs -> native share sheet (Web Share API)
    - Optional AI celebratory caption (later)
 
-THE BIG TEST (after pipeline is live)
+THE BIG TEST (in progress — June 10)
 -------------------------------------
-9. 100-runner race weekend rehearsal
-   - Seed script: 100 runners, all walks of life (elites -> DNFs), male/female/military mix
-   - One event: 1 long qualifier + 2 shorter roll-over distances, mixed entries
-   - Handful of real Stripe test-card entries through the UI; rest scripted
-   - Kiosk check-in on a couple computers (some manual for UI/UX, rest flagged by script)
-   - Mock race -> bulk upload finish times -> run algorithm -> tweak the ends -> publish
-   - Verify payouts, badges, racer pages, share cards — full system, end to end
+9. 100-runner race weekend rehearsal (90 scripted + 10 manual)
+   Old test data wiped June 10 (kept drujstew@gmail.com). Toolkit in scripts/test-race/.
+   a. [Dru] Create event: 10K qualifier + 5K roll-over, fees, gun times,
+      payout calculator settings for BOTH distances
+   b. Seed 90:    npm run test-race:seed -- --event=<EVENT_ID>            (preview)
+                  npm run test-race:seed -- --event=<EVENT_ID> --confirm  (run)
+   c. [Dru] Create 10 by hand: signup -> test-card membership -> enter race
+   d. [Dru] Kiosk check-in a few manually, then flag the rest:
+                  npm run test-race:checkin -- --event=<EVENT_ID> --confirm
+      (leaves ~8% no-shows; assigns race-day bibs from 101)
+   e. Generate timing CSVs (only checked-in runners; includes 1 DNF, 1 bad bib,
+      1 bandit per file):  npm run test-race:times -- --event=<EVENT_ID>
+   f. [Dru] Import each CSV: event -> Results console -> Import finish times;
+      fix the landmines on the review screen
+   g. [Dru] Console: check divisions/money, tweak the ends, Publish
+   h. Verify: results + badges rows, wallet, re-publish, unpublish
+   Timing CSV best-case headers: assigned_bib,pr_id,first_name,last_name,finish_time
 
 PARKED / LATER
 --------------

@@ -91,6 +91,7 @@ export function TeamDivisionGrid({ teams }: { teams: readonly TeamDivision[] }) 
               alt={team.name}
               width={220}
               height={220}
+              unoptimized
               className="h-auto w-full"
             />
           </button>
@@ -128,6 +129,7 @@ export function TeamDivisionGrid({ teams }: { teams: readonly TeamDivision[] }) 
                   alt=""
                   width={440}
                   height={440}
+                  unoptimized
                   className="h-auto w-full"
                 />
               </div>

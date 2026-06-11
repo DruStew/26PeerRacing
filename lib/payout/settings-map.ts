@@ -18,6 +18,7 @@ export function payoutSettingsToCalculationInput(
     entryCount: row.entry_count_override ?? live.entryCount,
     entryFeeCents: row.entry_fee_cents_override ?? live.entryFeeCents,
     processingFeeFraction: Number(row.processing_fee_fraction),
+    shootoutFraction: Number(row.shootout_fraction ?? 0),
     prHoldingFraction: Number(row.pr_holding_fraction),
     producerFractionOfPrHolding: Number(row.producer_fraction_of_pr_holding),
     trueAddedMoneyCents: row.true_added_money_cents,
@@ -34,10 +35,8 @@ export function payoutSettingsToCalculationInput(
       5,
       Math.max(1, Math.floor(Number(row.female_incentive_division_count ?? 1))),
     ),
-    femaleIncentivePlacesToPay: Math.min(
-      12,
-      Math.max(1, Math.floor(Number(row.female_incentive_places_to_pay ?? 12))),
-    ),
+    // Incentive pools always pay the full schedule column (the column's holes define payout depth).
+    femaleIncentivePlacesToPay: 12,
     femaleIncentiveDivisionLabels: divisionLabelsForCount(
       Number(row.female_incentive_division_count ?? 1),
     ),
@@ -45,10 +44,7 @@ export function payoutSettingsToCalculationInput(
       5,
       Math.max(1, Math.floor(Number(row.military_incentive_division_count ?? 1))),
     ),
-    militaryIncentivePlacesToPay: Math.min(
-      12,
-      Math.max(1, Math.floor(Number(row.military_incentive_places_to_pay ?? 12))),
-    ),
+    militaryIncentivePlacesToPay: 12,
     militaryIncentiveDivisionLabels: divisionLabelsForCount(
       Number(row.military_incentive_division_count ?? 1),
     ),
@@ -69,6 +65,7 @@ export function defaultDistancePayoutSettings(distanceId: string): Omit<Distance
   return {
     distance_id: distanceId,
     processing_fee_fraction: 0.04,
+    shootout_fraction: 0,
     pr_holding_fraction: 0.5,
     producer_fraction_of_pr_holding: 0.5,
     true_added_money_cents: 0,

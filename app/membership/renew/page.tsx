@@ -38,6 +38,7 @@ type ProfileRow = {
   home_state: string | null;
   zip: string | null;
   created_at: string | null;
+  pr_id: string | null;
 };
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -90,7 +91,7 @@ export default async function MembershipRenewPage({
 
   const { data: profileRaw } = await supabase
     .from("profiles")
-    .select("first_name,last_name,dob,sex,phone,email,hometown,home_state,zip,created_at")
+    .select("first_name,last_name,dob,sex,phone,email,hometown,home_state,zip,created_at,pr_id")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -129,6 +130,25 @@ export default async function MembershipRenewPage({
           Review your account and membership below. Renew to create events, enter races, and act as
           a pacer. Renewal extends your membership by one year.
         </p>
+
+        {profile?.pr_id?.trim() ? (
+          <section className="mt-8 overflow-hidden rounded-xl border border-[#1E3A5F]/15 bg-[#1E3A5F] p-6 text-white shadow-sm sm:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/65">
+                  Your Peer Racing ID
+                </p>
+                <p className="font-display mt-1 text-5xl font-bold tracking-tight text-[#E87722]">
+                  PR&nbsp;{profile.pr_id.trim()}
+                </p>
+              </div>
+              <p className="max-w-xs text-sm leading-relaxed text-white/75">
+                Your lifetime number — it follows you to every Peer Racing start line. Give it at
+                check-in or anytime someone asks for your bib.
+              </p>
+            </div>
+          </section>
+        ) : null}
 
         <section className="mt-10 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm sm:p-8">
           <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Your Profile</h2>
@@ -291,7 +311,10 @@ export default async function MembershipRenewPage({
               : "Stripe membership pricing is not configured—renewal is available as a free extension for development. Set STRIPE_SECRET_KEY and STRIPE_PRICE_MEMBERSHIP_ANNUAL to enable paid renewal."}
           </p>
           <div className="mt-6">
-            <RenewMembershipForm paidCheckoutEnabled={paidCheckoutEnabled} />
+            <RenewMembershipForm
+              paidCheckoutEnabled={paidCheckoutEnabled}
+              returnUrl={resolved.returnUrl?.startsWith("/") ? resolved.returnUrl : null}
+            />
           </div>
         </section>
 

@@ -116,6 +116,7 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
   const warnings: string[] = [];
 
   const processingFeeFraction = clamp(input.processingFeeFraction, 0, 1);
+  const shootoutFraction = clamp(input.shootoutFraction ?? 0, 0, 1);
   const prHoldingFraction = clamp(input.prHoldingFraction, 0, 1);
   const producerFractionOfPrHolding = clamp(input.producerFractionOfPrHolding, 0, 1);
   const divisionCount = Math.min(5, Math.max(1, Math.floor(input.divisionCount)));
@@ -131,8 +132,12 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
   const processingFeeCents = Math.round(grossPotCents * processingFeeFraction);
   const netAfterProcessingCents = grossPotCents - processingFeeCents;
 
-  const prHoldingCents = Math.round(netAfterProcessingCents * prHoldingFraction);
-  const racersPotCents = netAfterProcessingCents - prHoldingCents;
+  // Shootout fund skims net-after-processing FIRST; PR holding applies to the remainder.
+  const shootoutFundCents = Math.round(netAfterProcessingCents * shootoutFraction);
+  const netAfterShootoutCents = netAfterProcessingCents - shootoutFundCents;
+
+  const prHoldingCents = Math.round(netAfterShootoutCents * prHoldingFraction);
+  const racersPotCents = netAfterShootoutCents - prHoldingCents;
 
   const reqFemale = Math.max(0, Math.round(input.femaleIncentiveFromRacersPotCents));
   const reqMilitary = Math.max(0, Math.round(input.militaryIncentiveFromRacersPotCents));
@@ -281,6 +286,7 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
     grossPotCents,
     processingFeeCents,
     netAfterProcessingCents,
+    shootoutFundCents,
     prHoldingCents,
     racersPotCents,
     femaleIncentiveRequestedCents: reqFemale,

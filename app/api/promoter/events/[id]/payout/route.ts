@@ -5,6 +5,7 @@ import { defaultDistancePayoutSettings } from "@/lib/payout/settings-map";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
 import { isValidBracketId } from "@/lib/payout/bracket";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +71,15 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ ok: false, error: "Distance not found for this event." }, { status: 404 });
   }
 
-  const { count: entryCount } = await supabase
+  // Entry/check-in counts must see the whole field (same source of truth as the
+  // check-in roster page) — promoter session RLS can't read other users' entries,
+  // so use the service role after the promoter/admin gate above.
+  const service = createServiceRoleSupabaseClient();
+  if (!service) {
+    return NextResponse.json({ ok: false, error: "Server is missing SUPABASE_SERVICE_ROLE_KEY." }, { status: 503 });
+  }
+
+  const { count: entryCount } = await service
     .from("entries")
     .select("id", { count: "exact", head: true })
     .eq("event_id", eventId)
@@ -84,33 +93,38 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     .eq("distance_id", distanceId)
     .maybeSingle();
 
-  const { data: entriesForCheckIn } = await supabase
+  // Same two-step lookup as the check-in roster page (entries, then profiles by
+  // user_id) — there is no PostgREST FK relationship between entries and profiles,
+  // so an embedded join silently returns nothing.
+  const { data: entriesForCheckIn } = await service
     .from("entries")
-    .select(
-      `
-      kiosk_checked_in_at,
-      profiles (
-        sex,
-        active_or_retired_military
-      )
-    `,
-    )
+    .select("user_id,kiosk_checked_in_at")
     .eq("event_id", eventId)
     .eq("distance_id", distanceId);
 
+  const entryRows = (entriesForCheckIn ?? []) as { user_id: string | null; kiosk_checked_in_at: string | null }[];
+  const profileIds = [...new Set(entryRows.map((e) => e.user_id).filter((u): u is string => Boolean(u)))];
+  const profilesRes =
+    profileIds.length > 0
+      ? await service.from("profiles").select("id,sex,active_or_retired_military").in("id", profileIds)
+      : { data: [] };
+  const profileById = new Map(
+    ((profilesRes.data ?? []) as { id: string; sex: string | null; active_or_retired_military: boolean | null }[]).map(
+      (p) => [p.id, p],
+    ),
+  );
+
   let femaleEntryCount = 0;
   let militaryEntryCount = 0;
+  let checkedInCount = 0;
   let checkedInFemaleCount = 0;
   let checkedInMilitaryCount = 0;
-  for (const row of entriesForCheckIn ?? []) {
-    const r = row as {
-      kiosk_checked_in_at?: string | null;
-      profiles?: { sex?: string | null; active_or_retired_military?: boolean | null } | null;
-    };
-    const p = r.profiles;
+  for (const r of entryRows) {
+    const p = r.user_id ? profileById.get(r.user_id) : undefined;
     if (p?.sex === "female") femaleEntryCount += 1;
     if (p?.active_or_retired_military === true) militaryEntryCount += 1;
     if (!r.kiosk_checked_in_at) continue;
+    checkedInCount += 1;
     if (p?.sex === "female") checkedInFemaleCount += 1;
     if (p?.active_or_retired_military === true) checkedInMilitaryCount += 1;
   }
@@ -127,6 +141,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     suggestedFeeCents,
     femaleEntryCount,
     militaryEntryCount,
+    checkedInCount,
     checkedInFemaleCount,
     checkedInMilitaryCount,
   });
@@ -175,6 +190,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     "processing_fee_fraction",
     defaults.processing_fee_fraction,
   );
+  const shootout_fraction = fractionFromPercentOrFraction(body, "shootout_percent", "shootout_fraction", defaults.shootout_fraction);
   const pr_holding_fraction = fractionFromPercentOrFraction(body, "pr_holding_percent", "pr_holding_fraction", defaults.pr_holding_fraction);
   const producer_fraction_of_pr_holding = fractionFromPercentOrFraction(
     body,
@@ -261,6 +277,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
   const row: Omit<DistancePayoutSettingsRow, "updated_at"> = {
     ...defaults,
     processing_fee_fraction,
+    shootout_fraction,
     pr_holding_fraction,
     producer_fraction_of_pr_holding,
     true_added_money_cents,
