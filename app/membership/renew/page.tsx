@@ -3,7 +3,14 @@ import { redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
-import { isMembershipActive, type MembershipRow } from "@/lib/membership";
+import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
+import { MEMBERSHIP_TIER_LABELS } from "@/lib/membership-tiers";
+import {
+  anyPaidMembershipCheckoutConfiguredAsync,
+  membershipSubscriptionConfiguredAsync,
+} from "@/lib/stripe/membership-prices";
+import { tierLabelFromConfig } from "@/lib/membership-tier-config";
+import { fetchMembershipTierConfigs } from "@/lib/membership-tier-config.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { formatCalendarDate } from "@/lib/format-calendar-date";
@@ -50,12 +57,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function membershipPaidCheckoutConfigured(): boolean {
-  return Boolean(
-    process.env.STRIPE_SECRET_KEY?.trim() && process.env.STRIPE_PRICE_MEMBERSHIP_ANNUAL?.trim(),
-  );
-}
-
 export default async function MembershipRenewPage({
   searchParams,
 }: {
@@ -72,12 +73,11 @@ export default async function MembershipRenewPage({
 
   const resolved = await searchParams;
   const showCheckoutCanceled = resolved.canceled === "1";
-  const paidCheckoutEnabled = membershipPaidCheckoutConfigured();
 
   const { data: membershipRaw } = await supabase
     .from("memberships")
     .select(
-      "user_id,status,membership_start_at,membership_end_at,renewal_count,welcome_shown_at,updated_at,provider,provider_customer_id,created_at",
+      "user_id,status,tier,membership_start_at,membership_end_at,renewal_count,welcome_shown_at,updated_at,provider,provider_customer_id,created_at,stripe_subscription_id",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -106,6 +106,23 @@ export default async function MembershipRenewPage({
     .order("created_at", { ascending: false });
 
   const active = membership ? isMembershipActive(membership) : false;
+  const currentTier = membershipTierFromRow(membership);
+  const tierConfigs = await fetchMembershipTierConfigs();
+  const tierLabel =
+    tierLabelFromConfig(tierConfigs, currentTier) ||
+    MEMBERSHIP_TIER_LABELS[currentTier as keyof typeof MEMBERSHIP_TIER_LABELS] ||
+    currentTier;
+
+  const paidTierRows = tierConfigs.filter((t) => t.is_active && t.is_paid);
+  const paidTiers = await Promise.all(
+    paidTierRows.map(async (t) => ({
+      slug: t.slug,
+      display_name: t.display_name,
+      price_usd: t.price_cents / 100,
+      checkout_enabled: await membershipSubscriptionConfiguredAsync(t.slug),
+    })),
+  );
+  const showDevFree = !(await anyPaidMembershipCheckoutConfiguredAsync());
   const displayName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
   const authEmail = user.email ?? "";
   const profileEmail = profile?.email?.trim() ?? "";
@@ -197,7 +214,7 @@ export default async function MembershipRenewPage({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">
-                Membership details
+                Membership Details
               </h2>
               <p className="mt-1 text-sm text-[#1E3A5F]/65">Your current membership record.</p>
             </div>
@@ -217,6 +234,7 @@ export default async function MembershipRenewPage({
           {membership ? (
             <dl className="mt-5">
               <InfoRow label="User ID" value={membership.user_id} />
+              <InfoRow label="Tier" value={tierLabel} />
               <InfoRow label="Status" value={membership.status} />
               <InfoRow
                 label="Current period start"
@@ -296,7 +314,7 @@ export default async function MembershipRenewPage({
         ) : null}
 
         <section className="mt-8 rounded-xl border border-[#E87722]/25 bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Renew</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Membership Plan</h2>
           {showCheckoutCanceled ? (
             <div
               className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -305,15 +323,12 @@ export default async function MembershipRenewPage({
               Checkout was canceled. You have not been charged. You can try again when you are ready.
             </div>
           ) : null}
-          <p className="mt-2 text-sm text-[#1E3A5F]/75">
-            {paidCheckoutEnabled
-              ? "Pay for another year of membership with a secure card checkout (Stripe)."
-              : "Stripe membership pricing is not configured—renewal is available as a free extension for development. Set STRIPE_SECRET_KEY and STRIPE_PRICE_MEMBERSHIP_ANNUAL to enable paid renewal."}
-          </p>
           <div className="mt-6">
             <RenewMembershipForm
-              paidCheckoutEnabled={paidCheckoutEnabled}
               returnUrl={resolved.returnUrl?.startsWith("/") ? resolved.returnUrl : null}
+              currentTier={currentTier}
+              paidTiers={paidTiers}
+              showDevFree={showDevFree}
             />
           </div>
         </section>

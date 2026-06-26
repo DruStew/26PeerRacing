@@ -135,7 +135,7 @@ export default async function ShootoutFundPage() {
 
         {ledger.length === 0 ? (
           <div className="mt-10 rounded-xl border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 p-10 text-center">
-            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Nothing banked yet</h2>
+            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Nothing Banked Yet</h2>
             <p className="mt-2 text-sm text-[#1E3A5F]/60">
               Set a shootout fund percentage in a race&apos;s payout calculator — it banks here automatically when that
               race&apos;s results publish.

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authKioskForEvent } from "@/lib/kiosk/auth-kiosk-event";
 import { countEntriesForKioskRow } from "@/lib/kiosk/match-profile-entries";
+import { searchProfilesForKiosk } from "@/lib/kiosk/search-profiles-for-kiosk";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     }),
   );
 
-  const results = raw.map((row) => {
+  const entryResults = raw.map((row) => {
     const ec = row.entry_count;
     const rpcN = typeof ec === "string" ? parseInt(ec, 10) : Number(ec);
     const { count, distanceIds } = countEntriesForKioskRow(eventEntries ?? [], {
@@ -69,10 +70,36 @@ export async function POST(request: Request) {
 
     return {
       ...row,
+      kind: "entrant" as const,
       entry_count,
       distance_summary,
     };
   });
+
+  const seenUserIds = new Set(
+    entryResults
+      .map((r) => r.user_id as string | null | undefined)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  const memberRows = await searchProfilesForKiosk(auth.admin, eventId, q);
+  const memberResults = memberRows
+    .filter((m) => !seenUserIds.has(m.user_id))
+    .map((m) => ({
+      id: m.user_id,
+      user_id: m.user_id,
+      kind: "member" as const,
+      first_name: m.first_name,
+      last_name: m.last_name,
+      email: m.email,
+      phone: m.phone,
+      pr_id: m.pr_id,
+      bib: m.pr_id,
+      entry_count: m.entry_count,
+      distance_summary: m.distance_summary,
+    }));
+
+  const results = [...entryResults, ...memberResults];
 
   return NextResponse.json({ ok: true, results });
 }

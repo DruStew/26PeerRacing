@@ -14,7 +14,10 @@
     "test-race:seed": "node --use-system-ca --env-file=.env.local scripts/test-race/seed-runners.mjs",
     "test-race:checkin": "node --use-system-ca --env-file=.env.local scripts/test-race/check-in.mjs",
     "test-race:times": "node --use-system-ca --env-file=.env.local scripts/test-race/generate-times.mjs",
+    "test-race:results": "node --use-system-ca --env-file=.env.local scripts/test-race/results-csv.mjs",
     "test-race:link": "node --use-system-ca --env-file=.env.local scripts/test-race/magic-link.mjs",
+    "test-race:backfill-payouts": "node --use-system-ca --env-file=.env.local scripts/test-race/backfill-wallet-payouts.mjs",
+    "test-race:backfill-promoter-finance": "node --use-system-ca --env-file=.env.local scripts/test-race/backfill-promoter-finance.mjs",
     "db:login": "supabase login",
     "db:link": "supabase link",
     "db:push": "supabase db push",
@@ -22,8 +25,10 @@
     "db:new": "supabase migration new"
   },
   "dependencies": {
+    "@mapbox/mapbox-gl-draw": "^1.5.1",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.2",
+    "mapbox-gl": "^3.25.0",
     "next": "16.1.6",
     "papaparse": "^5.5.3",
     "react": "19.2.3",
@@ -32,6 +37,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/mapbox__mapbox-gl-draw": "^1.4.9",
+    "@types/mapbox-gl": "^3.4.1",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { authKioskForEvent } from "@/lib/kiosk/auth-kiosk-event";
-import { isMembershipActive, type MembershipRow } from "@/lib/membership";
+import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
+import {
+  distanceTierRequirementLabel,
+  tierCanEnterDistance,
+} from "@/lib/membership-tiers";
 import { isProfileComplete, type ProfileRow } from "@/lib/profile";
 import { insertRaceEntriesForUser, type RaceEntryPendingPayload } from "@/lib/race-entry/insert-entries";
 import { getStripe } from "@/lib/stripe/server";
@@ -75,7 +79,7 @@ export async function POST(request: Request) {
 
   const { data: membership } = await admin
     .from("memberships")
-    .select("user_id,status,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
+    .select("user_id,status,tier,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -85,6 +89,7 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   }
+  const memberTier = membershipTierFromRow(membership as MembershipRow);
 
   const { data: profile } = await admin
     .from("profiles")
@@ -117,7 +122,7 @@ export async function POST(request: Request) {
   const { data: allDistancesRaw } = await admin
     .from("distances")
     .select(
-      "id,label,pr_cutoff,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here",
+      "id,label,pr_cutoff,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_free_tier,allow_pr_team_tier,allow_top_tier",
     )
     .eq("event_id", eventId);
 
@@ -126,6 +131,17 @@ export async function POST(request: Request) {
 
   if (!distById.has(distanceId)) {
     return NextResponse.json({ ok: false, error: "Invalid distance for this event" }, { status: 400 });
+  }
+
+  const targetDist = distById.get(distanceId)!;
+  if (!tierCanEnterDistance(memberTier, targetDist)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `${targetDist.label ?? "Race"}: ${distanceTierRequirementLabel(targetDist)}.`,
+      },
+      { status: 403 },
+    );
   }
 
   const qualifierId = allDistances.find(
@@ -140,7 +156,7 @@ export async function POST(request: Request) {
 
   if (mode === "roll_over" && !qualifierId) {
     return NextResponse.json(
-      { ok: false, error: "This event does not have a qualifier carry-over configured." },
+      { ok: false, error: "This event does not have a qualifier Carry-Over configured." },
       { status: 400 },
     );
   }
@@ -159,10 +175,10 @@ export async function POST(request: Request) {
     primaryDistanceIds = [distanceId];
   } else {
     if (!sourceDistanceId || sourceDistanceId !== qualifierId) {
-      return NextResponse.json({ ok: false, error: "Invalid carry-over source distance." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid Carry-Over source distance." }, { status: 400 });
     }
     if (!allowedRollOverTargets.has(distanceId)) {
-      return NextResponse.json({ ok: false, error: "This race does not accept carry-over from the qualifier." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "This race does not accept Carry-Over from the qualifier." }, { status: 400 });
     }
     const { data: qualPrimary } = await admin
       .from("entries")

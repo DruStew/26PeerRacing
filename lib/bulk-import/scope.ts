@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { canManageEvent } from "@/lib/promoter/event-access";
+
 /**
  * Admin (role row) or the event's promoter may run bulk import for that event.
  */
@@ -8,14 +10,6 @@ export async function canUserBulkImportForEvent(
   userId: string,
   eventId: string,
 ): Promise<boolean> {
-  const { data: adminRows } = await supabase
-    .from("roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "admin");
-
-  if (adminRows && adminRows.length > 0) return true;
-
   const { data: ev, error } = await supabase
     .from("events")
     .select("promoter_id")
@@ -23,5 +17,5 @@ export async function canUserBulkImportForEvent(
     .maybeSingle();
 
   if (error || !ev) return false;
-  return (ev as { promoter_id: string }).promoter_id === userId;
+  return canManageEvent(supabase, userId, (ev as { promoter_id: string }).promoter_id);
 }

@@ -1,11 +1,11 @@
 import Link from "next/link";
 
 const TABS = [
-  { key: "edit", label: "Manage race", path: "edit" },
-  { key: "roster", label: "Check-in roster", path: "roster" },
-  { key: "kiosk", label: "Race day kiosk", path: "kiosk" },
-  { key: "payout", label: "Payout calculator", path: "payout" },
-  { key: "results", label: "Results console", path: "results" },
+  { key: "edit", label: "Manage Race", path: "edit" },
+  { key: "roster", label: "Check-In Roster", path: "roster" },
+  { key: "kiosk", label: "Race Day Kiosk", path: "kiosk" },
+  { key: "payout", label: "Payout Calculator", path: "payout" },
+  { key: "results", label: "Results Console", path: "results" },
 ] as const;
 
 export type EventNavTab = (typeof TABS)[number]["key"];

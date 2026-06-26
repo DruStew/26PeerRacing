@@ -1,8 +1,9 @@
 /**
- * Peer Racing division badges — renders the official badge artwork from /public
- * (PR_Alpha.png … PR_Echo.png; compact PR_*_small.png on the results console). Used on the producer
- * results console and, later,
- * racer results pages and the virtual trophy case.
+ * Peer Racing division badges — renders the official badge artwork from the
+ * 1000px masters in /public/PNG_1000px. Next/Image downscales each to the
+ * rendered size, so they stay crisp on hi-dpi screens without shipping the
+ * oversized export files. Used on the producer results console, public results
+ * pages, racer results, and the virtual trophy case.
  *
  * Incentive pools (female / military) show a small text chip under the badge;
  * the artwork itself is never tinted or altered.
@@ -20,19 +21,11 @@ export const DIVISION_COLORS: Record<string, { base: string; dark: string; light
 };
 
 const BADGE_SRC: Record<string, string> = {
-  Alpha: "/PR_Alpha.png",
-  Bravo: "/PR_Bravo.png",
-  Charlie: "/PR_Charlie.png",
-  Delta: "/PR_Delta.png",
-  Echo: "/PR_Echo.png",
-};
-
-const BADGE_SRC_SMALL: Record<string, string> = {
-  Alpha: "/PR_Alpha_small.png",
-  Bravo: "/PR_Bravo_small.png",
-  Charlie: "/PR_Charlie_small.png",
-  Delta: "/PR_Delta_small.png",
-  Echo: "/PR_Echo_small.png",
+  Alpha: "/PNG_1000px/PR_Alpha_1000.png",
+  Bravo: "/PNG_1000px/PR_Bravo_1000.png",
+  Charlie: "/PNG_1000px/PR_Charlie_1000.png",
+  Delta: "/PNG_1000px/PR_Delta_1000.png",
+  Echo: "/PNG_1000px/PR_Echo_1000.png",
 };
 
 export type BadgeVariant = "main" | "female" | "military";
@@ -47,18 +40,15 @@ export function DivisionBadge({
   division,
   variant = "main",
   size = 72,
-  small = false,
   muted = false,
 }: {
   division: string;
   variant?: BadgeVariant;
   /** Rendered width in px; height follows the artwork's aspect ratio. */
   size?: number;
-  /** Use compact badge artwork (PR_*_small.png) instead of full-size PNGs. */
-  small?: boolean;
   muted?: boolean;
 }) {
-  const src = (small ? BADGE_SRC_SMALL : BADGE_SRC)[division];
+  const src = BADGE_SRC[division];
   const chip = VARIANT_CHIP[variant];
   if (!src) return null;
 

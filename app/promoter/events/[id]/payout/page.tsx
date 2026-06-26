@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { EventNav } from "@/components/promoter/EventNav";
 import { EventPayoutClient } from "@/components/promoter/EventPayoutClient";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export default async function EventPayoutPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,14 +26,7 @@ export default async function EventPayoutPage({ params }: { params: Promise<{ id
   }
 
   const promoterId = (event as { promoter_id?: string }).promoter_id;
-  const isPromoter = auth.user.id === promoterId;
-  const { data: adminRoleRow } = await supabase
-    .from("roles")
-    .select("role")
-    .eq("user_id", auth.user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (!isPromoter && !adminRoleRow) {
+  if (!(await canManageEvent(supabase, auth.user.id, promoterId))) {
     notFound();
   }
 
@@ -69,7 +63,7 @@ export default async function EventPayoutPage({ params }: { params: Promise<{ id
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Producer finances</p>
-              <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">Payout calculator</h1>
+              <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">Payout Calculator</h1>
               <p className="mt-2 text-sm text-[#1E3A5F]/75">{event.name}</p>
             </div>
             <Link

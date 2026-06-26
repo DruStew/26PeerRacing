@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FlyerLightbox } from "@/components/events/FlyerLightbox";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { areEntriesOpenForEvent } from "@/lib/event-entry-status";
+import { formatDistanceDisplay } from "@/lib/distance-display";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -36,8 +37,10 @@ type DistanceRow = {
   id: string;
   event_id: string;
   label: string;
+  race_name?: string | null;
   sort_order: number | null;
   pr_cutoff: string | null;
+  results_published_at: string | null;
 };
 
 function sortDistancesForDisplay(distances: DistanceRow[]): DistanceRow[] {
@@ -69,30 +72,24 @@ export default async function EventsPage({
   const resolvedSearchParams = await searchParams;
   const page = Math.max(1, Number(resolvedSearchParams.page ?? "1"));
   const from = (page - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
 
+  // Find a Race = upcoming / still-open races only. Fully-published events fall
+  // off here (entries closed) and surface on the public Race Results index.
   const { data: events } = await supabaseServer
     .from("events")
     .select("id,name,city,state,race_date")
     .eq("status", "published")
-    .order("race_date", { ascending: true })
-    .range(from, to);
+    .order("race_date", { ascending: true });
 
-  const { count } = await supabaseServer
-    .from("events")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "published");
-
-  const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
-  const list = events ?? [];
-  const eventIds = list.map((e) => e.id);
+  const allEvents = events ?? [];
+  const allEventIds = allEvents.map((e) => e.id);
 
   const distancesByEvent = new Map<string, DistanceRow[]>();
-  if (eventIds.length > 0) {
+  if (allEventIds.length > 0) {
     const { data: distanceRows } = await supabaseServer
       .from("distances")
-      .select("id,event_id,label,sort_order,pr_cutoff")
-      .in("event_id", eventIds);
+      .select("id,event_id,label,race_name,sort_order,pr_cutoff,results_published_at")
+      .in("event_id", allEventIds);
 
     for (const row of distanceRows ?? []) {
       const d = row as DistanceRow;
@@ -101,6 +98,14 @@ export default async function EventsPage({
       distancesByEvent.set(d.event_id, arr);
     }
   }
+
+  const openEvents = allEvents.filter((e) =>
+    areEntriesOpenForEvent(null, distancesByEvent.get(e.id) ?? []),
+  );
+
+  const totalPages = Math.max(1, Math.ceil(openEvents.length / PAGE_SIZE));
+  const list = openEvents.slice(from, from + PAGE_SIZE);
+  const eventIds = list.map((e) => e.id);
 
   const countByEventDistance = new Map<string, Map<string, number>>();
   if (showEntryCounts && eventIds.length > 0) {
@@ -296,7 +301,10 @@ export default async function EventsPage({
                                       className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-1 text-xs text-[#1E3A5F]/90 sm:text-sm"
                                     >
                                       <span className="font-medium">
-                                        {d.label}
+                                        {formatDistanceDisplay({
+                                          label: d.label,
+                                          race_name: d.race_name,
+                                        })}
                                       </span>
                                       {showEntryCounts ? (
                                         <>

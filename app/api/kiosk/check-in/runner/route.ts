@@ -2,17 +2,34 @@ import { NextResponse } from "next/server";
 
 import { authKioskForEvent } from "@/lib/kiosk/auth-kiosk-event";
 import { filterEntriesForProfile } from "@/lib/kiosk/match-profile-entries";
+import { formatDistanceDisplay } from "@/lib/distance-display";
+import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
+import { tierLabelFromConfig } from "@/lib/membership-tier-config";
+import { fetchMembershipTierConfigs } from "@/lib/membership-tier-config.server";
+import { isProfileComplete, type ProfileRow } from "@/lib/profile";
+import { sumWalletBalanceCents } from "@/lib/wallet/balance";
 
 export const dynamic = "force-dynamic";
 
 type DistanceRow = {
   id: string;
   label: string | null;
+  race_name?: string | null;
+  gun_time?: string | null;
+  results_published_at?: string | null;
+  sort_order?: number | null;
   entry_fee_cents: number | null;
   is_peer_racing_qualifier?: boolean | null;
   allow_roll_over_from_qualifier?: boolean | null;
   allow_qualifier_split_to_roll_over_here?: boolean | null;
+  allow_free_tier?: boolean | null;
+  allow_pr_team_tier?: boolean | null;
+  allow_top_tier?: boolean | null;
 };
+
+function distanceLabel(d: Pick<DistanceRow, "label" | "race_name">): string {
+  return formatDistanceDisplay({ label: d.label ?? "Race", race_name: d.race_name });
+}
 
 /**
  * Full runner context for check-in: profile, all entries for this event, upsell distances, carry-over options.
@@ -66,7 +83,9 @@ export async function POST(request: Request) {
 
   const { data: profile } = await auth.admin
     .from("profiles")
-    .select("id,first_name,last_name,email,phone,pr_id")
+    .select(
+      "id,first_name,last_name,email,phone,pr_id,dob,sex,active_or_retired_military",
+    )
     .eq("id", userId)
     .maybeSingle();
 
@@ -97,12 +116,14 @@ export async function POST(request: Request) {
   const { data: distancesRaw } = await auth.admin
     .from("distances")
     .select(
-      "id,label,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here",
+      "id,label,race_name,gun_time,sort_order,results_published_at,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_free_tier,allow_pr_team_tier,allow_top_tier",
     )
     .eq("event_id", eventId)
     .order("sort_order", { ascending: true });
 
-  const distances = (distancesRaw ?? []) as DistanceRow[];
+  const distances = ((distancesRaw ?? []) as DistanceRow[]).filter(
+    (d) => !d.results_published_at,
+  );
   const distById = new Map(distances.map((d) => [d.id, d]));
 
   const entries = (entriesRaw ?? []).map((e) => {
@@ -122,7 +143,9 @@ export async function POST(request: Request) {
     return {
       ...row,
       kiosk_checked_in_at: row.kiosk_checked_in_at ?? null,
-      distance_label: distById.get(row.distance_id)?.label ?? "Race",
+      distance_label: distById.get(row.distance_id)
+        ? distanceLabel(distById.get(row.distance_id)!)
+        : "Race",
     };
   });
 
@@ -142,7 +165,7 @@ export async function POST(request: Request) {
       rollOverOptions.push({
         targetDistanceId: d.id,
         sourceDistanceId: qualifier.id,
-        label: `${d.label ?? "Race"} (carry-over from qualifier)`,
+        label: `${distanceLabel(d)} (Carry-Over from qualifier)`,
         entry_fee_cents: typeof d.entry_fee_cents === "number" ? d.entry_fee_cents : 0,
       });
     }
@@ -153,9 +176,42 @@ export async function POST(request: Request) {
     .filter((d) => !enteredDistanceIds.has(d.id) && !rollTargetIds.has(d.id))
     .map((d) => ({
       id: d.id,
-      label: d.label ?? "Race",
+      label: distanceLabel(d),
       entry_fee_cents: typeof d.entry_fee_cents === "number" ? d.entry_fee_cents : 0,
     }));
+
+  const { data: membershipRow } = await auth.admin
+    .from("memberships")
+    .select("user_id,status,tier,membership_start_at,membership_end_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const tierConfigs = await fetchMembershipTierConfigs();
+  const memberTier = membershipTierFromRow(membershipRow as MembershipRow | null);
+  const tierLabel = tierLabelFromConfig(tierConfigs, memberTier);
+
+  const qualifierRollOverTargets = qualifier
+    ? distances.filter((d) => d.id !== qualifier.id && d.allow_qualifier_split_to_roll_over_here)
+    : [];
+
+  const enterDistanceItems = distances.map((d) => ({
+    id: d.id,
+    label: d.label ?? "Race",
+    race_name: d.race_name ?? null,
+    entry_fee_cents: typeof d.entry_fee_cents === "number" ? d.entry_fee_cents : 0,
+    allow_free_tier: d.allow_free_tier,
+    allow_pr_team_tier: d.allow_pr_team_tier,
+    allow_top_tier: d.allow_top_tier,
+  }));
+
+  const gunTimes: Record<string, string> = {};
+  for (const d of distances) {
+    if (d.gun_time) {
+      gunTimes[d.id] = new Date(d.gun_time).toLocaleString();
+    }
+  }
+
+  const walletBalanceCents = await sumWalletBalanceCents(auth.admin, userId);
 
   return NextResponse.json({
     ok: true,
@@ -167,8 +223,34 @@ export async function POST(request: Request) {
       phone: (profile as { phone?: string | null }).phone ?? "",
       pr_id: (profile as { pr_id?: string | null }).pr_id ?? null,
     },
+    profileComplete: isProfileComplete(profile as ProfileRow),
+    membership: {
+      tier: memberTier,
+      tierLabel,
+      active: isMembershipActive(membershipRow as MembershipRow | null),
+    },
     entries,
     upsellDistances,
     rollOverOptions,
+    isWalkUp: entries.length === 0,
+    enterFlow: {
+      distances: enterDistanceItems,
+      qualifierId: qualifier?.id ?? null,
+      qualifierLabel: qualifier ? distanceLabel(qualifier) : "",
+      rollOverTargets: qualifierRollOverTargets.map((t) => ({
+        id: t.id,
+        label: t.label ?? "Race",
+        race_name: t.race_name ?? null,
+        entry_fee_cents: typeof t.entry_fee_cents === "number" ? t.entry_fee_cents : 0,
+        allow_free_tier: t.allow_free_tier,
+        allow_pr_team_tier: t.allow_pr_team_tier,
+        allow_top_tier: t.allow_top_tier,
+      })),
+      gunTimes,
+      enteredDistanceIds: [...enteredDistanceIds],
+      walletBalanceCents,
+      memberTier,
+      hasPaidEntryFees: distances.some((d) => (d.entry_fee_cents ?? 0) > 0),
+    },
   });
 }

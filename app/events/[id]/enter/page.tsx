@@ -2,9 +2,13 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { ShareRaceButton } from "@/components/events/ShareRaceButton";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { buildEventShareText } from "@/lib/event-share";
+import { formatDistanceDisplay } from "@/lib/distance-display";
 import { isProfileComplete, type ProfileRow } from "@/lib/profile";
-import { requireActiveMembership, type MembershipRow } from "@/lib/membership";
+import { distanceTierRequirementLabel } from "@/lib/membership-tiers";
+import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { MY_ENTRIES_ROUTE, WALLET_ROUTE } from "@/lib/routes";
 import { sumWalletBalanceCents } from "@/lib/wallet/balance";
@@ -16,7 +20,7 @@ export default async function EnterEventPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ success?: string; created_at?: string; session_id?: string; canceled?: string }>;
+  searchParams: Promise<{ success?: string; created_at?: string; session_id?: string; canceled?: string; error?: string }>;
 }) {
   const { id } = await params;
   const resolvedSearchParams = await searchParams;
@@ -59,21 +63,26 @@ export default async function EnterEventPage({
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("user_id,status,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
+    .select("user_id,status,tier,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
     .eq("user_id", user.id)
     .single();
   requireActiveMembership(membership as MembershipRow | null, enterUrl);
+  const memberTier = membershipTierFromRow(membership as MembershipRow);
 
   const { ensureBirthdayBenefit } = await import("@/lib/birthday-benefit");
   await ensureBirthdayBenefit(supabase, user.id, (profile as { dob?: string })?.dob ?? null, membership?.membership_end_at ?? null);
 
   const { data: distancesRaw } = await supabase
     .from("distances")
-    .select("id,label,gun_time,sort_order,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents")
+    .select("id,label,race_name,gun_time,sort_order,results_published_at,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,allow_free_tier,allow_pr_team_tier,allow_top_tier")
     .eq("event_id", id)
     .order("sort_order", { ascending: true, nullsFirst: true });
 
-  const distances = (distancesRaw ?? []).slice().sort((a, b) => {
+  // Distances with published results are closed for good — never offer them for entry.
+  const distances = (distancesRaw ?? [])
+    .filter((d) => !(d as { results_published_at?: string | null }).results_published_at)
+    .slice()
+    .sort((a, b) => {
     const aTime = (a as { gun_time?: string }).gun_time ?? "";
     const bTime = (b as { gun_time?: string }).gun_time ?? "";
     if (aTime && bTime) return new Date(aTime).getTime() - new Date(bTime).getTime();
@@ -103,7 +112,27 @@ export default async function EnterEventPage({
 
   const walletBalanceCents = await sumWalletBalanceCents(supabase, user.id);
 
+  const { data: userEntries } = await supabase
+    .from("entries")
+    .select("distance_id")
+    .eq("event_id", id)
+    .eq("user_id", user.id);
+  const enteredDistanceIds = new Set(
+    (userEntries ?? []).map((e) => (e as { distance_id: string }).distance_id),
+  );
+  const enteredLabels = distances
+    .filter((d) => enteredDistanceIds.has(d.id))
+    .map((d) =>
+      formatDistanceDisplay({
+        label: d.label,
+        race_name: (d as { race_name?: string | null }).race_name,
+      }),
+    );
+  const allDistancesEntered =
+    distances.length > 0 && distances.every((d) => enteredDistanceIds.has(d.id));
+
   const showSuccess = resolvedSearchParams.success === "1";
+  const showAlreadyEnteredError = resolvedSearchParams.error === "already_entered";
   const walletAfterEntryCents = showSuccess ? walletBalanceCents : null;
   const showCanceled = resolvedSearchParams.canceled === "1";
   const phoneDisplay =
@@ -112,6 +141,14 @@ export default async function EnterEventPage({
     user.email ||
     "";
   const location = [event.city, event.state].filter(Boolean).join(", ") || "—";
+
+  const runnerInviteShareText = buildEventShareText({
+    eventName: event.name,
+    raceDateLabel: event.race_date ? formatCalendarDate(event.race_date) : null,
+    location,
+    entriesOpen: true,
+    asRunnerInvite: true,
+  });
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
@@ -130,7 +167,7 @@ export default async function EnterEventPage({
 
         <header className="mt-6 border-b border-[#1E3A5F]/10 pb-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">
-            Enter race
+            Enter Race
           </p>
           <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
             {event.name}
@@ -152,6 +189,16 @@ export default async function EnterEventPage({
           </div>
         ) : null}
 
+        {showAlreadyEnteredError ? (
+          <div
+            className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="alert"
+          >
+            You&apos;re already entered for one or more of those races. Check the list below — entered
+            distances are marked and can&apos;t be selected again.
+          </div>
+        ) : null}
+
         {showSuccess ? (
           <div className="mt-10 rounded-xl border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 p-6 sm:p-8">
             <div className="flex flex-col items-center text-center sm:items-start sm:text-left">
@@ -160,13 +207,19 @@ export default async function EnterEventPage({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h2 className="font-display mt-4 text-xl font-semibold text-[#1E3A5F]">You&apos;re entered</h2>
+              <h2 className="font-display mt-4 text-xl font-semibold text-[#1E3A5F]">You&apos;re Entered</h2>
               <p className="mt-2 text-sm text-[#1E3A5F]/70">
                 Registered at: {resolvedSearchParams.created_at ?? "—"}
               </p>
               <p className="mt-3 text-sm font-medium text-[#1E3A5F]">
                 Wallet balance: {formatUsdFromCents(walletBalanceCents)}
               </p>
+              <ShareRaceButton
+                url={`/events/${event.id}`}
+                eventName={event.name}
+                shareText={runnerInviteShareText}
+                className="mt-6 w-full sm:w-auto"
+              />
               <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:items-start">
                 <Link
                   href={`/events/${event.id}`}
@@ -189,8 +242,40 @@ export default async function EnterEventPage({
               </div>
             </div>
           </div>
+        ) : allDistancesEntered ? (
+          <div className="mt-10 rounded-xl border border-emerald-200 bg-emerald-50 p-6 sm:p-8">
+            <h2 className="font-display text-xl font-semibold text-emerald-950">You&apos;re Already Entered</h2>
+            <p className="mt-2 text-sm text-emerald-950/85">
+              You have registrations for{" "}
+              {enteredLabels.length > 0 ? enteredLabels.join(", ") : "every open distance"} at this
+              event. No need to enter again.
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <Link
+                href={MY_ENTRIES_ROUTE}
+                className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#E87722]/90"
+              >
+                View my entries
+              </Link>
+              <Link
+                href={`/events/${event.id}`}
+                className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-6 py-3 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
+              >
+                Back to event
+              </Link>
+            </div>
+          </div>
         ) : (
           <form id="enter-event-form" method="post" action={`/api/events/${id}/enter`} className="mt-10">
+            {enteredLabels.length > 0 ? (
+              <div
+                className="mb-6 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950"
+                role="status"
+              >
+                Already entered in {enteredLabels.join(", ")}. You can add another distance below if
+                one is available.
+              </div>
+            ) : null}
             {distances.length > 0 && (
               <fieldset className="rounded-xl border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 p-4 sm:p-6">
                 <legend className="font-display px-1 text-lg font-semibold text-[#1E3A5F]">
@@ -204,14 +289,29 @@ export default async function EnterEventPage({
                   distances={distances.map((d) => ({
                     id: d.id,
                     label: d.label,
+                    race_name: (d as { race_name?: string | null }).race_name ?? null,
                     entry_fee_cents: (d as D).entry_fee_cents ?? 0,
+                    allow_free_tier: (d as D).allow_free_tier,
+                    allow_pr_team_tier: (d as D).allow_pr_team_tier,
+                    allow_top_tier: (d as D).allow_top_tier,
                   }))}
                   qualifierId={qualifier?.id ?? null}
-                  qualifierLabel={qualifier?.label ?? ""}
+                  qualifierLabel={
+                    qualifier
+                      ? formatDistanceDisplay({
+                          label: qualifier.label,
+                          race_name: (qualifier as { race_name?: string | null }).race_name,
+                        })
+                      : ""
+                  }
                   rollOverTargets={qualifierRollOverTargets.map((t) => ({
                     id: t.id,
                     label: t.label,
+                    race_name: (t as { race_name?: string | null }).race_name ?? null,
                     entry_fee_cents: (t as D).entry_fee_cents ?? 0,
+                    allow_free_tier: (t as D).allow_free_tier,
+                    allow_pr_team_tier: (t as D).allow_pr_team_tier,
+                    allow_top_tier: (t as D).allow_top_tier,
                   }))}
                   gunTimes={Object.fromEntries(
                     distances
@@ -219,6 +319,8 @@ export default async function EnterEventPage({
                       .map((d) => [d.id, new Date((d as { gun_time?: string }).gun_time!).toLocaleString()])
                   )}
                   walletBalanceCents={walletBalanceCents}
+                  enteredDistanceIds={[...enteredDistanceIds]}
+                  memberTier={memberTier}
                 />
               </fieldset>
             )}

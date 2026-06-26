@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 
 import { fulfillMembershipFromSession, fulfillRaceEntryFromSession } from "@/lib/stripe/fulfill";
+import { syncMembershipFromSubscription } from "@/lib/stripe/membership-subscription";
 import { getStripe } from "@/lib/stripe/server";
 
 export const runtime = "nodejs";
@@ -36,6 +37,24 @@ export async function POST(request: Request) {
       await fulfillMembershipFromSession(session);
     } else if (kind === "race_entry") {
       await fulfillRaceEntryFromSession(session);
+    }
+  }
+
+  if (
+    event.type === "customer.subscription.updated" ||
+    event.type === "customer.subscription.deleted"
+  ) {
+    const sub = event.data.object as Stripe.Subscription;
+    await syncMembershipFromSubscription(sub);
+  }
+
+  if (event.type === "invoice.paid") {
+    const invoice = event.data.object as Stripe.Invoice;
+    const subRef = invoice.subscription;
+    const subId = typeof subRef === "string" ? subRef : subRef?.id;
+    if (subId && stripe) {
+      const sub = await stripe.subscriptions.retrieve(subId);
+      await syncMembershipFromSubscription(sub);
     }
   }
 

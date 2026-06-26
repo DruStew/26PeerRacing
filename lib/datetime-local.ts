@@ -44,6 +44,37 @@ export function toDatetimeLocalInputValue(iso: string | null | undefined): strin
 }
 
 /**
+ * Default `<input type="datetime-local" />` value from a calendar race day (YYYY-MM-DD).
+ * Uses local wall time; defaults to 08:00 when hour/minute are omitted.
+ */
+export function defaultDatetimeLocalFromRaceDay(
+  raceDate: string | null | undefined,
+  hour = 8,
+  minute = 0,
+): string {
+  const d = localNoonFromDateOnly(raceDate);
+  if (!d) return "";
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(hour).padStart(2, "0");
+  const min = String(minute).padStart(2, "0");
+  return `${y}-${mo}-${day}T${h}:${min}`;
+}
+
+/** Existing datetime-local value, or race-day default when unset. */
+export function datetimeLocalInputValueOrRaceDayDefault(
+  iso: string | null | undefined,
+  raceDate: string | null | undefined,
+  hour = 8,
+  minute = 0,
+): string {
+  const existing = toDatetimeLocalInputValue(iso);
+  if (existing) return existing;
+  return defaultDatetimeLocalFromRaceDay(raceDate, hour, minute);
+}
+
+/**
  * Format an ISO instant for display in the runtime's local timezone.
  */
 export function formatDateTimeLocal(value: string | null | undefined): string {

@@ -20,7 +20,8 @@ type LedgerRow = {
 
 const categoryLabel: Record<string, string> = {
   entry_withdrawal_credit: "Entry withdrawal credit",
-  race_payout: "Race payout",
+  race_payout: "Race winnings",
+  promoter_event_earnings: "Event earnings",
   membership_credit: "Membership",
   bank_withdrawal: "Transfer to bank",
   entry_payment_from_wallet: "Paid from wallet",
@@ -62,9 +63,9 @@ export default async function WalletPage() {
           Wallet
         </h1>
         <p className="mt-3 max-w-2xl text-pretty text-[#1E3A5F]/75">
-          Credits from entry withdrawals (full entry fee as wallet balance), future race payouts, and
-          membership top-ups will appear here. Processing fees apply when money leaves Peer Racing
-          (e.g. refund to your card). Bank transfers out will be added later.
+          Credits from race winnings, event earnings (for producers), entry withdrawals, and future
+          membership top-ups appear here. Processing fees apply when money leaves Peer Racing (e.g.
+          refund to your card). Bank transfers out will be added later.
         </p>
 
         <div className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm">

@@ -42,7 +42,7 @@ export default async function MembershipWelcomePage({
           Welcome to Peer Racing
         </h1>
         <p className="mt-3 text-pretty text-lg font-medium text-[#1E3A5F]/90">
-          Membership activated
+          Membership Activated
         </p>
         <p className="mt-4 text-pretty text-sm leading-relaxed text-[#1E3A5F]/75">
           You&apos;re set to register for races, manage your entries, and use Peer Racing features

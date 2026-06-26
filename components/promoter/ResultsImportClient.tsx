@@ -292,7 +292,7 @@ export function ResultsImportClient({
           {unmatchedRows.length > 0 ? (
             <section>
               <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">
-                Needs review ({unmatchedRows.length})
+                Needs Review ({unmatchedRows.length})
               </h2>
               <p className="mt-1 text-sm text-[#1E3A5F]/70">
                 Match each row to a registered runner, or ignore it (pacers, unregistered runners,

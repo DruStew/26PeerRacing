@@ -64,6 +64,14 @@ export interface ConsoleComputation {
   shootoutFraction: number;
   /** Entry count that funded the pot (override ?? registered ?? finishers). */
   potEntryCount: number;
+  /** Promoter share of PR holding (credited to wallet on publish). */
+  producerCents: number;
+  /** Peer Racing org share of PR holding. */
+  peerRacingOrgCents: number;
+  prHoldingCents: number;
+  grossPotCents: number;
+  processingFeeCents: number;
+  racersPotCents: number;
 }
 
 export interface ComputeParams {
@@ -229,6 +237,12 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
       shootoutFundCents: payout.shootoutFundCents,
       shootoutFraction: Number(d.shootout_fraction ?? 0),
       potEntryCount: input.entryCount,
+      producerCents: payout.producerCents,
+      peerRacingOrgCents: payout.peerRacingOrgCents,
+      prHoldingCents: payout.prHoldingCents,
+      grossPotCents: payout.grossPotCents,
+      processingFeeCents: payout.processingFeeCents,
+      racersPotCents: payout.racersPotCents,
     };
   } catch {
     return { error: "Algorithm failed on this field — try different percentile cutoffs." };

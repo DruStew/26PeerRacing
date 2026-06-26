@@ -14,6 +14,8 @@ export async function PATCH(request: Request) {
     assignedBib?: string | null;
     /** Volunteer double-check: marks runner ready for this distance. */
     confirmCheckIn?: boolean;
+    /** Undo accidental check-in for this distance. */
+    undoCheckIn?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -55,13 +57,21 @@ export async function PATCH(request: Request) {
   if (t2 !== undefined) patch.transponder_2 = t2;
   if (assignedBib !== undefined) patch.assigned_bib = assignedBib;
   const confirmCheckIn = body.confirmCheckIn === true;
+  const undoCheckIn = body.undoCheckIn === true;
   const hasFieldPatch = Object.keys(patch).length > 0;
 
-  if (!confirmCheckIn && !hasFieldPatch) {
+  if (confirmCheckIn && undoCheckIn) {
+    return NextResponse.json(
+      { ok: false, error: "Cannot confirm and undo check-in in the same request" },
+      { status: 400 },
+    );
+  }
+
+  if (!confirmCheckIn && !undoCheckIn && !hasFieldPatch) {
     return NextResponse.json(
       {
         ok: false,
-        error: "Nothing to update (transponders, assigned race bib, or confirm check-in)",
+        error: "Nothing to update (transponders, assigned race bib, or check-in)",
       },
       { status: 400 },
     );
@@ -186,6 +196,7 @@ export async function PATCH(request: Request) {
   // Confirm check-in updates kiosk_checked_in_at via Postgres RPC so we are not blocked by PostgREST’s
   // *entries* schema cache (common right after adding a column, before reload). The UPDATE runs in the DB.
   let data: Record<string, unknown> | null = null;
+  let checkInEntries: Record<string, unknown>[] = [];
 
   if (confirmCheckIn) {
     const { data: rpcRows, error: rpcError } = await auth.admin.rpc("kiosk_confirm_entry_check_in", {
@@ -195,8 +206,23 @@ export async function PATCH(request: Request) {
     if (rpcError) {
       return NextResponse.json({ ok: false, error: rpcError.message }, { status: 500 });
     }
-    const rows = rpcRows as unknown[] | undefined;
-    data = (Array.isArray(rows) ? rows[0] : null) as Record<string, unknown> | null;
+    checkInEntries = (Array.isArray(rpcRows) ? rpcRows : []) as Record<string, unknown>[];
+    data = checkInEntries[0] ?? null;
+    if (!data) {
+      return NextResponse.json({ ok: false, error: "Entry not found for this event" }, { status: 404 });
+    }
+  }
+
+  if (undoCheckIn) {
+    const { data: rpcRows, error: rpcError } = await auth.admin.rpc("kiosk_revert_entry_check_in", {
+      p_event_id: eventId,
+      p_entry_id: entryId,
+    });
+    if (rpcError) {
+      return NextResponse.json({ ok: false, error: rpcError.message }, { status: 500 });
+    }
+    checkInEntries = (Array.isArray(rpcRows) ? rpcRows : []) as Record<string, unknown>[];
+    data = checkInEntries[0] ?? null;
     if (!data) {
       return NextResponse.json({ ok: false, error: "Entry not found for this event" }, { status: 404 });
     }
@@ -220,5 +246,9 @@ export async function PATCH(request: Request) {
     data = updData as Record<string, unknown>;
   }
 
-  return NextResponse.json({ ok: true, entry: data });
+  return NextResponse.json({
+    ok: true,
+    entry: data,
+    entries: checkInEntries.length > 0 ? checkInEntries : data ? [data] : [],
+  });
 }

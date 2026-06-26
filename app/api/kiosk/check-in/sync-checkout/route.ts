@@ -60,5 +60,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: result.error ?? "Fulfillment failed" }, { status: 400 });
   }
 
-  return NextResponse.json({ ok: true });
+  const isWalkUp = session.metadata?.kiosk_walk_up === "1";
+  const userId = typeof session.metadata?.user_id === "string" ? session.metadata.user_id : "";
+
+  return NextResponse.json({
+    ok: true,
+    walkUpAutoCheckedIn: isWalkUp,
+    userId: userId || undefined,
+  });
 }

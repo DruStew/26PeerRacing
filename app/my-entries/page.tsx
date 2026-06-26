@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { isDistanceEntryOpen } from "@/lib/entry-cutoff";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
-import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
+import { DEFAULT_PUBLIC_ROUTE, MY_RESULTS_ROUTE } from "@/lib/routes";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { WithdrawEntryButton } from "./WithdrawEntryButton";
@@ -88,6 +88,18 @@ export default async function MyEntriesPage() {
   const rows = normalizeEntryRows(rawRows ?? []);
   const byId = new Map(rows.map((r) => [r.id, r]));
 
+  // Published results owned by this racer, keyed by entry so we can link each
+  // entry straight to its gamified result page.
+  const { data: resultRows } = await supabase
+    .from("results")
+    .select("id, entry_id")
+    .eq("user_id", user.id)
+    .eq("published", true);
+  const resultIdByEntry = new Map<string, string>();
+  for (const row of (resultRows ?? []) as { id: string; entry_id: string | null }[]) {
+    if (row.entry_id) resultIdByEntry.set(row.entry_id, row.id);
+  }
+
   const dependentsBySource = new Map<string, number>();
   for (const r of rows) {
     if (r.source_entry_id) {
@@ -129,7 +141,7 @@ export default async function MyEntriesPage() {
           <p>
             Good luck with your upcoming races! We understand that life happens, and you may need to
             withdraw or make changes to the races you have entered—including the Peer Racing
-            Qualifier and any roll-over entries. While online registration is open, you can make any
+            Qualifier and any Carry-Over entries. While online registration is open, you can make any
             changes you need.
           </p>
           <p>
@@ -211,7 +223,7 @@ export default async function MyEntriesPage() {
 
                       let kindLabel = "Primary entry";
                       if (entry.entry_type === "roll_over") {
-                        kindLabel = `Qualifier roll-over (from ${sourceLabel} → ${dist?.label ?? "this race"})`;
+                        kindLabel = `Qualifier Carry-Over (from ${sourceLabel} → ${dist?.label ?? "this race"})`;
                       } else if (isQualifierPrimary) {
                         kindLabel = "Peer Racing Qualifier (primary)";
                       }
@@ -219,6 +231,8 @@ export default async function MyEntriesPage() {
                       const hasLinkedRollOvers =
                         entry.entry_type === "primary" &&
                         (dependentsBySource.get(entry.id) ?? 0) > 0;
+
+                      const resultId = resultIdByEntry.get(entry.id);
 
                       return (
                         <li
@@ -238,7 +252,15 @@ export default async function MyEntriesPage() {
                                 })}
                               </p>
                             </div>
-                            <div className="shrink-0 sm:max-w-xs sm:text-right">
+                            <div className="flex shrink-0 flex-col items-stretch gap-2 sm:max-w-xs sm:items-end sm:text-right">
+                              {resultId ? (
+                                <Link
+                                  href={`${MY_RESULTS_ROUTE}/${resultId}`}
+                                  className="inline-flex items-center justify-center gap-1 rounded-md bg-[#E87722] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#E87722]/90"
+                                >
+                                  View result →
+                                </Link>
+                              ) : null}
                               <WithdrawEntryButton
                                 entryId={entry.id}
                                 distanceLabel={dist?.label?.trim() ?? ""}

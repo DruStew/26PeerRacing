@@ -2,7 +2,11 @@ import { AdminChrome } from "@/components/admin/AdminChrome";
 import { requireAdmin } from "@/lib/admin/require-admin";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  await requireAdmin("/admin");
+  const { admin } = await requireAdmin("/admin");
 
-  return <AdminChrome>{children}</AdminChrome>;
+  return (
+    <AdminChrome badge={admin.isSuperAdmin ? "Super Admin" : "Admin"}>
+      {children}
+    </AdminChrome>
+  );
 }

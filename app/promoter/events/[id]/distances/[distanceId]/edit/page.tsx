@@ -2,7 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { toDatetimeLocalInputValue } from "@/lib/datetime-local";
+import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
+import type { CourseGeoJSON } from "@/lib/mapbox/config";
+import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
+import { formatDistanceDisplay } from "@/lib/distance-display";
+import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
+import { datetimeLocalInputValueOrRaceDayDefault } from "@/lib/datetime-local";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const inputClass =
@@ -27,7 +32,7 @@ export default async function EditDistancePage({
 
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id,name")
+    .select("id,name,race_date,venue_lat,venue_lng")
     .eq("id", eventId)
     .single();
 
@@ -38,7 +43,7 @@ export default async function EditDistancePage({
   const { data: distance, error: distanceError } = await supabase
     .from("distances")
     .select(
-      "id,label,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents",
+      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier",
     )
     .eq("id", distanceId)
     .eq("event_id", eventId)
@@ -50,7 +55,7 @@ export default async function EditDistancePage({
 
   const { data: qualifierDistance } = await supabase
     .from("distances")
-    .select("id,label")
+    .select("id,label,race_name")
     .eq("event_id", eventId)
     .eq("is_peer_racing_qualifier", true)
     .maybeSingle();
@@ -62,7 +67,19 @@ export default async function EditDistancePage({
     entry_fee_cents?: number;
   };
   const entryFeeDollarsDefault = ((distanceWithExtras.entry_fee_cents ?? 0) / 100).toFixed(2);
-  const gunTimeDefault = toDatetimeLocalInputValue(distanceWithExtras.gun_time ?? null);
+  const raceDay = (event as { race_date?: string | null }).race_date ?? null;
+  const gunTimeDefault = datetimeLocalInputValueOrRaceDayDefault(
+    distanceWithExtras.gun_time ?? null,
+    raceDay,
+    8,
+    0,
+  );
+  const entryDeadlineDefault = datetimeLocalInputValueOrRaceDayDefault(
+    distanceWithExtras.pr_cutoff ?? null,
+    raceDay,
+    23,
+    59,
+  );
   const isThisQualifier =
     (distance as { is_peer_racing_qualifier?: boolean }).is_peer_racing_qualifier === true;
   const otherIsQualifier = qualifierDistance && qualifierDistance.id !== distanceId;
@@ -78,6 +95,8 @@ export default async function EditDistancePage({
     }
 
     const label = String(formData.get("label") ?? "").trim();
+    const raceNameRaw = String(formData.get("race_name") ?? "").trim();
+    const raceName = raceNameRaw || null;
     const gunTimeRaw = formData.get("gun_time");
     const gunTime =
       gunTimeRaw && String(gunTimeRaw).trim()
@@ -109,10 +128,13 @@ export default async function EditDistancePage({
       return Math.round(d * 100);
     })();
 
+    const tierFlags = parseDistanceTierFlagsFromForm(formData);
+
     const { error } = await supabase
       .from("distances")
       .update({
         label,
+        race_name: raceName,
         gun_time: gunTime,
         pr_cutoff: prCutoff,
         is_peer_racing_qualifier: isQualifier,
@@ -121,6 +143,7 @@ export default async function EditDistancePage({
         allow_pacers: allowPacers,
         pacer_fee_cents: pacerFeeCents,
         entry_fee_cents: entryFeeCents,
+        ...tierFlags,
       })
       .eq("id", distanceId)
       .eq("event_id", eventId);
@@ -152,7 +175,10 @@ export default async function EditDistancePage({
             Edit Distance
           </p>
           <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
-            {distance.label}
+            {formatDistanceDisplay({
+              label: distance.label,
+              race_name: (distance as { race_name?: string | null }).race_name,
+            })}
           </h1>
           <p className="mt-2 text-sm text-[#1E3A5F]/75">{event.name}</p>
         </div>
@@ -160,8 +186,22 @@ export default async function EditDistancePage({
         <div className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm sm:p-8">
           <form action={updateDistance} className="space-y-5">
             <div>
+              <label htmlFor="race_name" className="text-sm font-medium text-[#1E3A5F]">
+                Individual race name{" "}
+                <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
+              </label>
+              <input
+                id="race_name"
+                name="race_name"
+                defaultValue={(distance as { race_name?: string | null }).race_name ?? ""}
+                className={inputClass}
+                placeholder="Kids Run"
+              />
+            </div>
+
+            <div>
               <label htmlFor="label" className="text-sm font-medium text-[#1E3A5F]">
-                Label
+                Race distance
               </label>
               <input
                 id="label"
@@ -169,8 +209,15 @@ export default async function EditDistancePage({
                 defaultValue={distance.label}
                 required
                 className={inputClass}
+                placeholder="1 mile"
               />
             </div>
+
+            <DistanceTierCheckboxes
+              initialFree={(distance as { allow_free_tier?: boolean }).allow_free_tier === true}
+              initialPrTeam={(distance as { allow_pr_team_tier?: boolean }).allow_pr_team_tier !== false}
+              initialTopTier={(distance as { allow_top_tier?: boolean }).allow_top_tier !== false}
+            />
 
             <div>
               <label htmlFor="entry_fee_dollars" className="text-sm font-medium text-[#1E3A5F]">
@@ -208,7 +255,7 @@ export default async function EditDistancePage({
                 id="pr_cutoff"
                 name="pr_cutoff"
                 type="datetime-local"
-                defaultValue={toDatetimeLocalInputValue(distanceWithExtras.pr_cutoff ?? null)}
+                defaultValue={entryDeadlineDefault}
                 className={inputClass}
               />
             </div>
@@ -219,7 +266,7 @@ export default async function EditDistancePage({
               </p>
               <p className="mt-2 text-sm leading-relaxed text-[#1E3A5F]/70">
                 You may have only one Qualifier per event. Runners can enter the Qualifier and
-                optionally roll their split to other races you allow below.
+                optionally Carry-Over their split to other races you allow below.
               </p>
               {isThisQualifier ? (
                 <div className="mt-4 space-y-4">
@@ -229,7 +276,7 @@ export default async function EditDistancePage({
                       htmlFor="allow_roll_over_from_qualifier"
                       className="text-sm font-medium text-[#1E3A5F]"
                     >
-                      Allow roll-over splits from this Qualifier?
+                      Allow Carry-Over splits from this Qualifier?
                     </label>
                     <select
                       id="allow_roll_over_from_qualifier"
@@ -252,14 +299,19 @@ export default async function EditDistancePage({
                 <div className="mt-4 space-y-4">
                   <p className="text-sm text-[#1E3A5F]">
                     This event&apos;s Peer Racing Qualifier is{" "}
-                    <strong className="font-semibold">{qualifierDistance!.label}</strong>.
+                    <strong className="font-semibold">
+                      {formatDistanceDisplay({
+                        label: qualifierDistance!.label,
+                        race_name: (qualifierDistance as { race_name?: string | null }).race_name,
+                      })}
+                    </strong>.
                   </p>
                   <div>
                     <label
                       htmlFor="allow_qualifier_split_to_roll_over_here"
                       className="text-sm font-medium text-[#1E3A5F]"
                     >
-                      Allow Qualifier split to roll over to this race?
+                      Allow Carry-Over from the Qualifier into this race?
                     </label>
                     <select
                       id="allow_qualifier_split_to_roll_over_here"
@@ -280,7 +332,7 @@ export default async function EditDistancePage({
               ) : (
                 <p className="mt-4 text-sm text-[#1E3A5F]/70">
                   No Qualifier set for this event yet. Set one on another distance to enable
-                  roll-over options here.
+                  Carry-Over options here.
                 </p>
               )}
             </div>
@@ -327,6 +379,34 @@ export default async function EditDistancePage({
             </button>
           </form>
         </div>
+
+        <section className="mt-10">
+          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Course Map</h2>
+          <p className="mt-1 text-sm text-[#1E3A5F]/70">
+            Draw this distance&apos;s route. The course and its measured length show on the public
+            event and results pages for racers and followers.
+          </p>
+          <div className="mt-6">
+            <CourseEditorLazy
+              eventId={eventId}
+              distanceId={distanceId}
+              initialCourse={
+                ((distance as { course_geojson?: CourseGeoJSON | null }).course_geojson ?? null) as
+                  | CourseGeoJSON
+                  | null
+              }
+              venue={
+                (event as { venue_lat?: number | null }).venue_lat != null &&
+                (event as { venue_lng?: number | null }).venue_lng != null
+                  ? {
+                      lat: (event as { venue_lat: number }).venue_lat,
+                      lng: (event as { venue_lng: number }).venue_lng,
+                    }
+                  : null
+              }
+            />
+          </div>
+        </section>
       </main>
     </div>
   );

@@ -6,6 +6,20 @@ import { loadFinishersForDistance, type FinisherRow } from "@/lib/results-consol
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
+import {
+  creditRacePayoutsForDistance,
+  reverseRacePayoutsForDistance,
+  type RacePayoutCredit,
+} from "@/lib/wallet/credit-race-payout";
+import {
+  creditPromoterEarningsForDistance,
+  reversePromoterEarningsForDistance,
+} from "@/lib/wallet/credit-promoter-earnings";
+import { countChecksFromResults } from "@/lib/admin/load-finance-stats";
+import {
+  formatUnpublishBlockersMessage,
+  getUnpublishSpendBlockers,
+} from "@/lib/wallet/unpublish-spend-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -26,14 +40,17 @@ async function gate(eventId: string, supabase: SupabaseClient) {
   if (error || !event) {
     return { ok: false as const, response: NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 }) };
   }
-  if ((event as { promoter_id: string }).promoter_id === uid) return { ok: true as const };
   const { data: admin } = await supabase
     .from("roles")
     .select("role")
     .eq("user_id", uid)
     .eq("role", "admin")
     .maybeSingle();
-  if (admin) return { ok: true as const };
+  const isAdmin = Boolean(admin);
+  if ((event as { promoter_id: string }).promoter_id === uid) {
+    return { ok: true as const, uid, isAdmin };
+  }
+  if (isAdmin) return { ok: true as const, uid, isAdmin };
   return { ok: false as const, response: NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 }) };
 }
 
@@ -66,7 +83,13 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return NextResponse.json({ ok: false, error: "Server is missing SUPABASE_SERVICE_ROLE_KEY." }, { status: 503 });
   }
 
-  let body: { distance_id?: string; action?: string; min_percentile?: number; max_percentile?: number };
+  let body: {
+    distance_id?: string;
+    action?: string;
+    min_percentile?: number;
+    max_percentile?: number;
+    force_unpublish?: boolean;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -91,6 +114,22 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const action = body.action === "unpublish" ? "unpublish" : "publish";
 
   if (action === "unpublish") {
+    const forceUnpublish = body.force_unpublish === true && gated.isAdmin;
+    if (!forceUnpublish) {
+      const blockers = await getUnpublishSpendBlockers(service, distanceId);
+      if (blockers.length > 0) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "unpublish_wallet_spent",
+            error: formatUnpublishBlockersMessage(blockers),
+            blockers,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     // Badges cascade from results via result_id, but clear any strays too.
     const { error: badgeErr } = await service
       .from("badges")
@@ -107,6 +146,16 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     await service.from("distances").update({ results_published_at: null }).eq("id", distanceId);
     // Reverse the shootout fund banking — unpublished races contribute nothing.
     await service.from("shootout_fund_ledger").delete().eq("distance_id", distanceId);
+    await service.from("distance_financial_snapshots").delete().eq("distance_id", distanceId);
+    // Claw back the race-winnings wallet credits for this distance.
+    const reversed = await reverseRacePayoutsForDistance(service, distanceId);
+    if (!reversed.ok) {
+      return NextResponse.json({ ok: false, error: `Wallet reversal: ${reversed.error}` }, { status: 500 });
+    }
+    const reversedPromoter = await reversePromoterEarningsForDistance(service, distanceId);
+    if (!reversedPromoter.ok) {
+      return NextResponse.json({ ok: false, error: `Promoter wallet reversal: ${reversedPromoter.error}` }, { status: 500 });
+    }
     await setEventPublishedFlag(service, eventId);
     return NextResponse.json({ ok: true, action: "unpublish" });
   }
@@ -283,13 +332,88 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
 
   await service.from("distances").update({ results_published_at: publishedAt }).eq("id", distanceId);
 
+  // Credit each racer's net winnings (division + incentives) to their wallet.
+  const { data: eventMeta } = await service.from("events").select("name").eq("id", eventId).maybeSingle();
+  const { data: distMeta } = await service.from("distances").select("label").eq("id", distanceId).maybeSingle();
+  const payoutCredits: RacePayoutCredit[] = [];
+  for (const e of comp.entries) {
+    const f = finisherByAlgoId.get(e.id);
+    if (!f?.userId) continue;
+    const incentiveTotal = comp.incentives.reduce((s, _pool, i) => s + Math.round(e.getIncentivePayout(i)), 0);
+    const total = Math.round(e.payout) + incentiveTotal;
+    if (total <= 0) continue;
+    payoutCredits.push({
+      userId: f.userId,
+      entryId: f.entryId,
+      resultId: resultIdByEntryId.get(f.entryId) ?? null,
+      amountCents: total,
+    });
+  }
+  const credited = await creditRacePayoutsForDistance(service, {
+    eventId,
+    distanceId,
+    eventName: (eventMeta as { name?: string | null } | null)?.name ?? "Race",
+    distanceLabel: (distMeta as { label?: string | null } | null)?.label ?? "Race",
+    credits: payoutCredits,
+  });
+  if (!credited.ok) {
+    return NextResponse.json({ ok: false, error: `Wallet payout: ${credited.error}` }, { status: 500 });
+  }
+
+  const { data: eventRow } = await service.from("events").select("promoter_id,name").eq("id", eventId).maybeSingle();
+  const promoterId = (eventRow as { promoter_id?: string | null } | null)?.promoter_id ?? null;
+  const eventName = (eventRow as { name?: string | null } | null)?.name ?? "Race";
+  const distanceLabel = (distMeta as { label?: string | null } | null)?.label ?? "Race";
+
+  let promoterCreditedCents = 0;
+  if (promoterId && comp.producerCents > 0) {
+    const promoterCredit = await creditPromoterEarningsForDistance(service, {
+      eventId,
+      distanceId,
+      promoterId,
+      eventName,
+      distanceLabel,
+      amountCents: comp.producerCents,
+    });
+    if (!promoterCredit.ok) {
+      return NextResponse.json({ ok: false, error: `Promoter wallet: ${promoterCredit.error}` }, { status: 500 });
+    }
+    promoterCreditedCents = promoterCredit.creditedCents;
+  } else {
+    await reversePromoterEarningsForDistance(service, distanceId);
+  }
+
+  const checksPaidCount = countChecksFromResults(resultRows);
+  const totalRunnerPayoutCents = comp.totalMainPaidCents + comp.totalIncentivePaidCents;
+  const { error: snapshotErr } = await service.from("distance_financial_snapshots").upsert(
+    {
+      distance_id: distanceId,
+      event_id: eventId,
+      promoter_id: promoterId,
+      published_at: publishedAt,
+      entry_count: comp.potEntryCount,
+      gross_pot_cents: comp.grossPotCents,
+      processing_fee_cents: comp.processingFeeCents,
+      shootout_fund_cents: comp.shootoutFundCents,
+      pr_holding_cents: comp.prHoldingCents,
+      producer_cents: comp.producerCents,
+      peer_racing_org_cents: comp.peerRacingOrgCents,
+      racers_pot_cents: comp.racersPotCents,
+      total_runner_payout_cents: totalRunnerPayoutCents,
+      checks_paid_count: checksPaidCount,
+    },
+    { onConflict: "distance_id" },
+  );
+  if (snapshotErr) {
+    return NextResponse.json({ ok: false, error: `Finance snapshot: ${snapshotErr.message}` }, { status: 500 });
+  }
+
   // Bank this race's shootout fund holding (idempotent: republish overwrites the same row).
-  const { data: eventRow } = await service.from("events").select("promoter_id").eq("id", eventId).maybeSingle();
   const { error: shootoutErr } = await service.from("shootout_fund_ledger").upsert(
     {
       event_id: eventId,
       distance_id: distanceId,
-      promoter_id: (eventRow as { promoter_id?: string | null } | null)?.promoter_id ?? null,
+      promoter_id: promoterId,
       fraction: comp.shootoutFraction,
       entry_count: comp.potEntryCount,
       amount_cents: comp.shootoutFundCents,
@@ -314,6 +438,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       totalMainPaidCents: comp.totalMainPaidCents,
       totalIncentivePaidCents: comp.totalIncentivePaidCents,
       shootoutFundCents: comp.shootoutFundCents,
+      racersPaid: credited.racersPaid,
+      walletCreditedCents: credited.totalCents,
+      promoterCreditedCents,
     },
   });
 }

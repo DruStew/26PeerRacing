@@ -5,13 +5,22 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
-import { DEFAULT_PUBLIC_ROUTE, KIOSK_ROUTE, MY_ENTRIES_ROUTE, WALLET_ROUTE } from "@/lib/routes";
+import {
+  DEFAULT_PUBLIC_ROUTE,
+  KIOSK_ROUTE,
+  MY_ENTRIES_ROUTE,
+  MY_RESULTS_ROUTE,
+  RACE_RESULTS_ROUTE,
+  WALLET_ROUTE,
+} from "@/lib/routes";
 
 const publicNav = [
   { name: "Find a Race", href: DEFAULT_PUBLIC_ROUTE },
   { name: "From Our Founder", href: "/#from-founder" },
-  { name: "Host an Event", href: "/promoter" },
 ] as const;
+
+/** Public results index — shown to racers and visitors in place of "Host an Event". */
+const raceResultsLink = { name: "Race Results", href: RACE_RESULTS_ROUTE } as const;
 
 /** Race-day staff only (promoter/admin); hidden from runners and signed-out visitors. */
 const kioskLink = { name: "PR Kiosk", href: KIOSK_ROUTE } as const;
@@ -23,6 +32,9 @@ const membershipLink = {
 
 const walletLink = { name: "Wallet", href: WALLET_ROUTE } as const;
 const myEntriesLink = { name: "My Entries", href: MY_ENTRIES_ROUTE } as const;
+const myResultsLink = { name: "My Results", href: MY_RESULTS_ROUTE } as const;
+
+const adminLink = { name: "Admin", href: "/admin" } as const;
 
 export function LandingNavbar() {
   const [open, setOpen] = useState(false);
@@ -32,6 +44,9 @@ export function LandingNavbar() {
   const [signedIn, setSignedIn] = useState(false);
   const [firstName, setFirstName] = useState<string | null>(null);
   const [isRaceStaff, setIsRaceStaff] = useState(false);
+  const [platformAdminBadge, setPlatformAdminBadge] = useState<"Super Admin" | "Admin" | null>(
+    null,
+  );
 
   useEffect(() => {
     const supabase = createClient();
@@ -50,20 +65,19 @@ export function LandingNavbar() {
           setSignedIn(false);
           setFirstName(null);
           setIsRaceStaff(false);
+          setPlatformAdminBadge(null);
           return;
         }
 
         setSignedIn(true);
-        const [{ data: profile }, { data: staffRole }, { count: ownedEventCount }] =
+        const [{ data: profile }, { data: roleRows }, { count: ownedEventCount }] =
           await Promise.all([
             supabase.from("profiles").select("first_name").eq("id", user.id).maybeSingle(),
             supabase
               .from("roles")
               .select("role")
               .eq("user_id", user.id)
-              .in("role", ["promoter", "admin"])
-              .limit(1)
-              .maybeSingle(),
+              .in("role", ["promoter", "admin", "super_admin", "booth"]),
             supabase
               .from("events")
               .select("id", { count: "exact", head: true })
@@ -73,7 +87,23 @@ export function LandingNavbar() {
         if (!cancelled) {
           const name = profile?.first_name?.trim();
           setFirstName(name && name.length > 0 ? name : null);
-          setIsRaceStaff(Boolean(staffRole) || (ownedEventCount ?? 0) > 0);
+
+          const roles = new Set((roleRows ?? []).map((r) => r.role as string));
+          const isSuperAdmin = roles.has("super_admin");
+          const isAdmin = roles.has("admin");
+          const isPromoter = roles.has("promoter");
+          const isBooth = roles.has("booth");
+
+          setPlatformAdminBadge(
+            isSuperAdmin ? "Super Admin" : isAdmin ? "Admin" : null,
+          );
+          setIsRaceStaff(
+            isSuperAdmin ||
+              isAdmin ||
+              isPromoter ||
+              isBooth ||
+              (ownedEventCount ?? 0) > 0,
+          );
         }
       } finally {
         // Whatever happens, never leave the greeting stuck on the loading shimmer.
@@ -114,9 +144,25 @@ export function LandingNavbar() {
     window.location.assign("/");
   }
 
+  // Promoters/admins manage their own events here ("My Events"); everyone else
+  // (runners and signed-out visitors) gets the public "Race Results" index.
+  const promoterNavLink = isRaceStaff ? { name: "My Events", href: "/promoter" } : raceResultsLink;
+
   const navLinks = signedIn
-    ? [publicNav[0], ...(isRaceStaff ? [kioskLink] : []), publicNav[1], publicNav[2], myEntriesLink]
-    : [publicNav[0], publicNav[1], membershipLink, publicNav[2]];
+    ? [
+        publicNav[0],
+        ...(isRaceStaff ? [kioskLink] : []),
+        publicNav[1],
+        promoterNavLink,
+        myEntriesLink,
+        myResultsLink,
+      ]
+    : [publicNav[0], publicNav[1], membershipLink, raceResultsLink];
+
+  const roleBadgeClass =
+    platformAdminBadge === "Super Admin"
+      ? "bg-[#E87722]/15 text-[#E87722]"
+      : "bg-[#1E3A5F]/10 text-[#1E3A5F]/80";
 
   return (
     <header className="sticky top-0 z-50 border-b border-[#1E3A5F]/10 bg-white">
@@ -151,7 +197,14 @@ export function LandingNavbar() {
               aria-hidden
             />
           ) : signedIn ? (
-            <div ref={userMenuRef} className="relative">
+            <div ref={userMenuRef} className="relative flex items-center gap-2">
+              {platformAdminBadge ? (
+                <span
+                  className={`hidden rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide sm:inline ${roleBadgeClass}`}
+                >
+                  {platformAdminBadge}
+                </span>
+              ) : null}
               <button
                 type="button"
                 className="inline-flex items-center gap-1 text-sm font-medium text-[#1E3A5F] transition-colors hover:text-[#E87722]"
@@ -179,6 +232,26 @@ export function LandingNavbar() {
                   aria-labelledby="landing-user-menu-button"
                   className="absolute right-0 top-full z-50 mt-1 min-w-[11rem] rounded-md border border-[#1E3A5F]/15 bg-white py-1 shadow-lg"
                 >
+                  {platformAdminBadge ? (
+                    <>
+                      <div className="px-3 py-2">
+                        <span
+                          className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${roleBadgeClass}`}
+                        >
+                          {platformAdminBadge}
+                        </span>
+                      </div>
+                      <Link
+                        href={adminLink.href}
+                        role="menuitem"
+                        className="block px-3 py-2 text-sm font-medium text-[#1E3A5F] hover:bg-[#1E3A5F]/5 hover:text-[#E87722]"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        {adminLink.name} dashboard
+                      </Link>
+                      <div className="my-1 border-t border-[#1E3A5F]/10" />
+                    </>
+                  ) : null}
                   <Link
                     href={membershipLink.href}
                     role="menuitem"
@@ -266,9 +339,25 @@ export function LandingNavbar() {
                 />
               ) : signedIn ? (
                 <div className="flex flex-col gap-1">
-                  <span className="py-1 text-center text-base font-semibold text-[#1E3A5F]">
-                    {greeting}
-                  </span>
+                  <div className="flex flex-wrap items-center justify-center gap-2 py-1">
+                    <span className="text-base font-semibold text-[#1E3A5F]">{greeting}</span>
+                    {platformAdminBadge ? (
+                      <span
+                        className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${roleBadgeClass}`}
+                      >
+                        {platformAdminBadge}
+                      </span>
+                    ) : null}
+                  </div>
+                  {platformAdminBadge ? (
+                    <Link
+                      href={adminLink.href}
+                      className="block py-2 pl-2 text-base font-medium text-[#E87722] hover:underline"
+                      onClick={() => setOpen(false)}
+                    >
+                      Admin dashboard
+                    </Link>
+                  ) : null}
                   <Link
                     href={membershipLink.href}
                     className="block py-2 pl-2 text-base font-medium text-[#1E3A5F] hover:text-[#E87722]"

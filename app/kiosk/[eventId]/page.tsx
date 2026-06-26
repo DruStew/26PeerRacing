@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { KioskShell } from "@/components/kiosk/KioskShell";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 
@@ -29,29 +28,15 @@ export default async function KioskEventPage({ params }: { params: Promise<{ eve
   const location = [(event as { city?: string }).city, (event as { state?: string }).state]
     .filter(Boolean)
     .join(", ");
+  const subtitle = `${location || "—"} · ${formatCalendarDate((event as { race_date: string }).race_date)}`;
 
   return (
-    <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
-      <LandingNavbar />
-      <main className="mx-auto max-w-lg px-4 py-10 sm:px-6">
-        <Link
-          href="/kiosk"
-          className="text-sm font-medium text-[#1E3A5F]/70 hover:text-[#E87722]"
-        >
-          ← Kiosk Help
-        </Link>
-        <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">
-          Check-In
-        </p>
-        <h1 className="font-display mt-2 text-2xl font-bold text-[#1E3A5F]">{(event as { name: string }).name}</h1>
-        <p className="mt-1 text-sm text-[#1E3A5F]/70">
-          {location || "—"} · {formatCalendarDate((event as { race_date: string }).race_date)}
-        </p>
-        <p className="mt-6 text-sm text-[#1E3A5F]/80">
-          Enter the <strong>6-digit kiosk code</strong> from your race director.
-        </p>
-        <KioskLoginClient eventId={eventId} />
-      </main>
-    </div>
+    <KioskShell title={(event as { name: string }).name} subtitle={subtitle}>
+      <p className="text-sm text-[#1E3A5F]/80">
+        Enter the <strong>6-digit kiosk code</strong> from your race director to open the check-in desk on this
+        tablet.
+      </p>
+      <KioskLoginClient eventId={eventId} />
+    </KioskShell>
   );
 }

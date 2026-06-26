@@ -586,7 +586,7 @@ export function EventPayoutClient({
       <div className="grid gap-10 lg:grid-cols-2">
       <div className="space-y-6">
         <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Race distance</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Race Distance</h2>
           <p className="mt-1 text-xs text-[#1E3A5F]/65">
             Each distance is its own race with separate payouts. Entry fee and entry count below default from this distance.
           </p>
@@ -616,7 +616,7 @@ export function EventPayoutClient({
         </section>
 
         <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Entries & entry fee (this distance)</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Entries & Entry Fee (This Distance)</h2>
           <p className="mt-1 text-xs text-[#1E3A5F]/65">
             Adjust only if you are modeling a different number than live registration. Matching live clears saved overrides.
           </p>
@@ -641,7 +641,7 @@ export function EventPayoutClient({
         </section>
 
         <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Fees & splits</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Fees & Splits</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <PercentField
               label="Processing fee"
@@ -685,7 +685,7 @@ export function EventPayoutClient({
         </section>
 
         <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Payout schedule</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Payout Schedule</h2>
           <p className="mt-1 text-xs text-[#1E3A5F]/65">
             Choose divisions, which PR payout column applies, optional extra on a division, and female/military incentives.
             True added money is set in Fees &amp; splits above.
@@ -815,7 +815,7 @@ export function EventPayoutClient({
             </div>
           </div>
 
-          <h3 className="mt-8 text-sm font-semibold text-[#1E3A5F]">Incentive payoffs</h3>
+          <h3 className="mt-8 text-sm font-semibold text-[#1E3A5F]">Incentive Payoffs</h3>
           <p className="mt-1 text-xs text-[#1E3A5F]/65">
             Splits only apply to dollars in each incentive pool. Each pool can use its own PR payout schedule column
             (auto from female or military entry counts for this distance, or manual). Place weights follow that column.
@@ -837,7 +837,7 @@ export function EventPayoutClient({
 
           <div className="mt-6 space-y-8">
             <div>
-              <p className="text-sm font-semibold text-[#1E3A5F]">Female incentive pool</p>
+              <p className="text-sm font-semibold text-[#1E3A5F]">Female Incentive Pool</p>
               <div className="mt-3 max-w-md">
                 <DollarField
                   label="Female incentive (from racers pot)"
@@ -938,7 +938,7 @@ export function EventPayoutClient({
             </div>
 
             <div>
-              <p className="text-sm font-semibold text-[#1E3A5F]">Military incentive pool</p>
+              <p className="text-sm font-semibold text-[#1E3A5F]">Military Incentive Pool</p>
               <div className="mt-3 max-w-md">
                 <DollarField
                   label="Military incentive (from racers pot)"

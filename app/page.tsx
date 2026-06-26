@@ -6,37 +6,37 @@ import { VisualExampleImage } from "@/components/landing/VisualExampleImage";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
 
-/** Bump when full-size team badge PNGs in /public are replaced (busts browser cache). */
-const TEAM_BADGE_VERSION = "20260611";
+/** Bump when team badge PNGs in /public are replaced (busts browser cache). */
+const TEAM_BADGE_VERSION = "20260624";
 
 const teams = [
   {
     name: "Alpha Team",
-    src: `/PR_Alpha.png?v=${TEAM_BADGE_VERSION}`,
+    src: `/PNG_1000px/PR_Alpha_1000.png?v=${TEAM_BADGE_VERSION}`,
     description:
       "The Alpha Team, reminiscent of sharp mountain peaks, embodies the highest level of racing achievement. It serves as an aspirational symbol for those who dare to reach the summit of their potential. Alpha Team racers are the exemplars of dedication and unwavering commitment, inspiring others with their pursuit of greatness.",
   },
   {
     name: "Bravo Team",
-    src: `/PR_Bravo.png?v=${TEAM_BADGE_VERSION}`,
+    src: `/PNG_1000px/PR_Bravo_1000.png?v=${TEAM_BADGE_VERSION}`,
     description:
       "The Bravo Team, who are lightning fast, represents racers who ignite the race with their relentless drive. These individuals thrive on challenges, constantly pushing their limits to achieve excellence. For Bravo Team members, every race is a lightning-paced journey, where determination towards a new PR fuels their quest for the finish line. Their drive for excellence is fueled by passion and intensity while they electrify the racers around them.",
   },
   {
     name: "Charlie Team",
-    src: `/PR_Charlie.png?v=${TEAM_BADGE_VERSION}`,
+    src: `/PNG_1000px/PR_Charlie_1000.png?v=${TEAM_BADGE_VERSION}`,
     description:
       "The Charlie Team, symbolized by ladder rungs ascending, signifies racers who are steadily climbing to new heights in their journey. Whether they are seasoned racers looking for consistent progress or beginners taking their initial strides, the Charlie Team embodies the upward trajectory of personal growth. Every stride is a testament to their commitment to improvement.",
   },
   {
     name: "Delta Team",
-    src: `/PR_Delta.png?v=${TEAM_BADGE_VERSION}`,
+    src: `/PNG_1000px/PR_Delta_1000.png?v=${TEAM_BADGE_VERSION}`,
     description:
       "The Delta Team, constantly ascending, signifies a community of racers united by their unwavering commitment to progress. Within the Delta Team, racers span various levels, from those taking their initial strides to seasoned racers seeking a steady course. This group embodies the upward trajectory of personal growth, where each step marks significant progress. Racers who make up the Delta Team share a common spirit of resilience, always aiming higher.",
   },
   {
     name: "Echo Team",
-    src: `/PR_Echo.png?v=${TEAM_BADGE_VERSION}`,
+    src: `/PNG_1000px/PR_Echo_1000.png?v=${TEAM_BADGE_VERSION}`,
     description:
       "The Echo Base represents the foundational level of Peer Racing, where every racer's journey begins. Just as we all start somewhere, the Echo Team embraces the spirit of new beginnings and fresh aspirations. These racers might be taking their initial steps into the racing world or choosing a different path to health and fitness. The Echo Team is united by the shared belief that every stride, no matter how small, contributes to a powerful journey.",
   },

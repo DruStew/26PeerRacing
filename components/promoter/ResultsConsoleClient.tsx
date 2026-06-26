@@ -194,6 +194,17 @@ export function ResultsConsoleClient({
     [realMode, realFinishers, sampleRows],
   );
 
+  // Map algorithm-entry id (prId ?? entryId) -> account user id, so the finisher
+  // list can deep-link into a racer's promoter-scoped history. Real mode only.
+  const userIdByAlgoId = useMemo(() => {
+    const m = new Map<string, string>();
+    if (!realMode) return m;
+    for (const f of realFinishers) {
+      if (f.userId) m.set(f.id, f.userId);
+    }
+    return m;
+  }, [realMode, realFinishers]);
+
   const computation = useMemo<ConsoleComputation | { error: string } | null>(() => {
     if (loading) return null;
     return computeConsoleResults({
@@ -217,7 +228,7 @@ export function ResultsConsoleClient({
     maxPercentile,
   ]);
 
-  async function publish(action: "publish" | "unpublish") {
+  async function publish(action: "publish" | "unpublish", forceUnpublish = false) {
     setPublishing(true);
     setPublishError(null);
     setPublishNotice(null);
@@ -230,28 +241,69 @@ export function ResultsConsoleClient({
           action,
           min_percentile: minPercentile,
           max_percentile: maxPercentile,
+          ...(forceUnpublish ? { force_unpublish: true } : {}),
         }),
       });
       const json = (await res.json()) as {
         ok: boolean;
         error?: string;
+        code?: string;
+        blockers?: Array<{
+          name: string;
+          role: "racer" | "promoter";
+          creditCents: number;
+          balanceCents: number;
+          shortfallCents: number;
+        }>;
         publishedAt?: string;
-        summary?: { resultsWritten: number; badgesAwarded: number };
+        summary?: {
+          resultsWritten: number;
+          badgesAwarded: number;
+          racersPaid?: number;
+          walletCreditedCents?: number;
+          promoterCreditedCents?: number;
+        };
       };
       if (!res.ok || !json.ok) {
-        setPublishError(json.error ?? `Error ${res.status}`);
+        if (json.code === "unpublish_wallet_spent" && json.blockers?.length) {
+          const detail = json.blockers
+            .slice(0, 4)
+            .map((b) => {
+              const role = b.role === "promoter" ? "Promoter" : "Racer";
+              return `${role} ${b.name}: credited ${fmtUsd(b.creditCents)}, wallet now ${fmtUsd(b.balanceCents)}`;
+            })
+            .join(" · ");
+          setPublishError(`${json.error ?? "Cannot unpublish."} ${detail}`);
+        } else {
+          setPublishError(json.error ?? `Error ${res.status}`);
+        }
         return;
       }
       if (action === "publish") {
         setResultsPublishedAt(json.publishedAt ?? new Date().toISOString());
+        const s = json.summary;
+        const walletNote =
+          s && (s.racersPaid ?? 0) > 0
+            ? ` ${fmtUsd(s.walletCreditedCents ?? 0)} in winnings credited to ${s.racersPaid} racer${
+                s.racersPaid === 1 ? "" : "s"
+              }' wallets.`
+            : "";
+        const promoterNote =
+          s && (s.promoterCreditedCents ?? 0) > 0
+            ? ` ${fmtUsd(s.promoterCreditedCents ?? 0)} in event earnings credited to your wallet.`
+            : "";
         setPublishNotice(
-          json.summary
-            ? `Published — ${json.summary.resultsWritten} results written, ${json.summary.badgesAwarded} badges awarded.`
+          s
+            ? `Published — ${s.resultsWritten} results written, ${s.badgesAwarded} badges awarded.${walletNote}${promoterNote}`
             : "Published.",
         );
       } else {
         setResultsPublishedAt(null);
-        setPublishNotice("Results unpublished — racer pages and badges for this distance are withdrawn.");
+        setPublishNotice(
+          forceUnpublish
+            ? "Results force-unpublished (admin override) — wallet credits for this distance were clawed back."
+            : "Results unpublished — racer pages, badges, wallet winnings, and promoter earnings for this distance are withdrawn.",
+        );
       }
     } catch (e) {
       setPublishError(e instanceof Error ? e.message : "Request failed");
@@ -422,7 +474,7 @@ export function ResultsConsoleClient({
         <>
           {/* badge rail */}
           <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Badges in play — {selectedLabel}</h2>
+            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Badges In Play — {selectedLabel}</h2>
             <p className="mt-1 text-xs text-[#1E3A5F]/65">
               Every finisher earns their division badge; paid places also win money. Incentive pools award their own
               badge alongside the main one.
@@ -430,7 +482,7 @@ export function ResultsConsoleClient({
             <div className="mt-4 flex flex-wrap items-end gap-6">
               {[...comp.main.winners.keys()].map((div, i) => (
                 <div key={div} className="flex flex-col items-center gap-1">
-                  <DivisionBadge division={div} size={76} small />
+                  <DivisionBadge division={div} size={76} />
                   <span className="text-xs font-medium text-[#1E3A5F]/70">
                     {comp.main.winners.get(div)?.length ?? 0} runners
                   </span>
@@ -439,7 +491,7 @@ export function ResultsConsoleClient({
               {comp.incentives.map((pool) =>
                 [...pool.result.winners.keys()].map((div, i) => (
                   <div key={`${pool.key}-${div}`} className="flex flex-col items-center gap-1">
-                    <DivisionBadge division={div} variant={pool.variant} size={64} small />
+                    <DivisionBadge division={div} variant={pool.variant} size={64} />
                     <span className="text-xs font-medium text-[#1E3A5F]/70">
                       {pool.title} · {pool.result.winners.get(div)?.length ?? 0}
                     </span>
@@ -491,7 +543,7 @@ export function ResultsConsoleClient({
 
           {/* main divisions */}
           <section className="space-y-4">
-            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Peer Team divisions</h2>
+            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Peer Team Divisions</h2>
             <div className="grid gap-4 lg:grid-cols-2">
               {[...comp.main.winners.entries()].map(([div, runners], i) => {
                 const pay = comp.payoutByDivision.get(div);
@@ -500,7 +552,7 @@ export function ResultsConsoleClient({
                 return (
                   <div key={div} className="rounded-xl border border-[#1E3A5F]/10 bg-white p-5 shadow-sm">
                     <div className="flex items-center gap-4">
-                      <DivisionBadge division={div} size={56} small />
+                      <DivisionBadge division={div} size={56} />
                       <div>
                         <p className="font-display text-base font-semibold text-[#1E3A5F]">{div}</p>
                         <p className="text-xs text-[#1E3A5F]/60">
@@ -524,7 +576,7 @@ export function ResultsConsoleClient({
           {/* incentive pools */}
           {comp.incentives.map((pool, poolIdx) => (
             <section key={pool.key} className="space-y-4">
-              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">{pool.title} divisions</h2>
+              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">{pool.title} Divisions</h2>
               <div className="grid gap-4 lg:grid-cols-2">
                 {[...pool.result.winners.entries()].map(([div, runners], i) => {
                   const pay = pool.payoutDivisions.find((p) => p.label === div);
@@ -533,7 +585,7 @@ export function ResultsConsoleClient({
                   return (
                     <div key={div} className="rounded-xl border border-[#1E3A5F]/10 bg-white p-5 shadow-sm">
                       <div className="flex items-center gap-4">
-                        <DivisionBadge division={div} variant={pool.variant} size={56} small />
+                        <DivisionBadge division={div} variant={pool.variant} size={56} />
                         <div>
                           <p className="font-display text-base font-semibold text-[#1E3A5F]">
                             {div} <span className="text-xs font-normal text-[#1E3A5F]/55">({pool.title})</span>
@@ -558,7 +610,12 @@ export function ResultsConsoleClient({
           ))}
 
           {/* full finisher list */}
-          <FullFinisherList comp={comp} raceLabel={selectedLabel} />
+          <FullFinisherList
+            comp={comp}
+            raceLabel={selectedLabel}
+            eventId={eventId}
+            userIdByAlgoId={userIdByAlgoId}
+          />
 
           {/* publish */}
           <section className="rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6">
@@ -688,7 +745,17 @@ function csvField(v: string | number): string {
  * Full field in overall placing order with division marking, division place, and
  * payouts — plus CSV export of the same rows.
  */
-function FullFinisherList({ comp, raceLabel }: { comp: ConsoleComputation; raceLabel: string }) {
+function FullFinisherList({
+  comp,
+  raceLabel,
+  eventId,
+  userIdByAlgoId,
+}: {
+  comp: ConsoleComputation;
+  raceLabel: string;
+  eventId: string;
+  userIdByAlgoId: Map<string, string>;
+}) {
   // Main division + place per runner, derived from the algorithm's winner buckets
   // (entry.peerRacingRank can be overwritten by incentive runs, so don't rely on it here).
   const mainPlacing = new Map<string, { division: string; place: number }>();
@@ -756,7 +823,7 @@ function FullFinisherList({ comp, raceLabel }: { comp: ConsoleComputation; raceL
     <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Full finisher list</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Full Finisher List</h2>
           <p className="mt-1 text-xs text-[#1E3A5F]/65">
             Every finisher in overall placing order — {comp.entries.length} runners. Paid rows highlighted.
           </p>
@@ -815,7 +882,18 @@ function FullFinisherList({ comp, raceLabel }: { comp: ConsoleComputation; raceL
                   <td className="px-3 py-1.5 font-mono text-xs text-[#1E3A5F]/70">{e.bibNumber}</td>
                   <td className="px-3 py-1.5 font-mono text-xs text-[#1E3A5F]/70">{e.id}</td>
                   <td className="px-3 py-1.5 text-[#1E3A5F]">
-                    {e.firstName} {e.lastName}
+                    {userIdByAlgoId.get(e.id) ? (
+                      <Link
+                        href={`/promoter/events/${eventId}/racer/${userIdByAlgoId.get(e.id)}`}
+                        className="font-medium text-[#1E3A5F] underline-offset-2 hover:text-[#E87722] hover:underline"
+                      >
+                        {e.firstName} {e.lastName}
+                      </Link>
+                    ) : (
+                      <>
+                        {e.firstName} {e.lastName}
+                      </>
+                    )}
                     <span className="ml-2 text-xs text-[#1E3A5F]/50">
                       {e.sex === "Female" ? "F" : "M"}
                       {e.isMilitary() ? " · MIL" : ""} · {e.age}
@@ -869,7 +947,7 @@ function DivisionTimeline({ comp }: { comp: ConsoleComputation }) {
 
   return (
     <div className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-white p-4 sm:p-5">
-      <p className="text-sm font-semibold text-[#1E3A5F]">Field timeline</p>
+      <p className="text-sm font-semibold text-[#1E3A5F]">Field Timeline</p>
       <p className="mt-0.5 text-xs text-[#1E3A5F]/65">How finishers spread across division bands</p>
 
       {/* Visual-only chart: bands, dots, and axis — no labels on the timeline itself. */}

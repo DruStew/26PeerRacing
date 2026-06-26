@@ -5,19 +5,25 @@ import { isProfileComplete, type ProfileRow } from "@/lib/profile";
 import { getStripe } from "@/lib/stripe/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { isMembershipActive, type MembershipRow } from "@/lib/membership";
+import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
+import {
+  distanceTierRequirementLabel,
+  tierCanEnterDistance,
+  type DistanceTierAccess,
+} from "@/lib/membership-tiers";
 import { sumWalletBalanceCents } from "@/lib/wallet/balance";
 import { walletApplyDebitForRaceEntry, walletCreditAdjustment } from "@/lib/wallet/wallet-race-entry";
 
 type DistanceRow = {
   id: string;
   pr_cutoff?: string | null;
+  results_published_at?: string | null;
   label?: string | null;
   entry_fee_cents?: number | null;
   is_peer_racing_qualifier?: boolean;
   allow_roll_over_from_qualifier?: boolean;
   allow_qualifier_split_to_roll_over_here?: boolean;
-};
+} & DistanceTierAccess;
 
 function computeEntryTotalCents(
   primaryDistanceIds: string[],
@@ -65,7 +71,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { data: membership } = await supabase
     .from("memberships")
-    .select("user_id,status,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
+    .select("user_id,status,tier,membership_start_at,membership_end_at,welcome_shown_at,renewal_count")
     .eq("user_id", user.id)
     .single();
   if (!isMembershipActive(membership as MembershipRow | null)) {
@@ -74,6 +80,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       { status: 403 },
     );
   }
+  const memberTier = membershipTierFromRow(membership as MembershipRow);
 
   const { data: event, error: eventError } = await supabase
     .from("events")
@@ -99,7 +106,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { data: allDistancesRaw } = await supabase
     .from("distances")
     .select(
-      "id,label,pr_cutoff,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here",
+      "id,label,pr_cutoff,results_published_at,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_free_tier,allow_pr_team_tier,allow_top_tier",
     )
     .eq("event_id", eventId);
 
@@ -134,7 +141,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           {
             ok: false,
             error:
-              "You cannot enter a race as a primary selection if you are using a qualifier roll-over into that same race. Choose one or the other.",
+              "You cannot enter a race as a primary selection if you are using a qualifier Carry-Over into that same race. Choose one or the other.",
           },
           { status: 400 },
         );
@@ -145,7 +152,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         {
           ok: false,
           error:
-            "Select the Peer Racing Qualifier as a primary entry to use qualifier roll-over options.",
+            "Select the Peer Racing Qualifier as a primary entry to use Carry-Over options.",
         },
         { status: 400 },
       );
@@ -161,10 +168,35 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!validDistanceIds.has(did)) {
       return NextResponse.json({ ok: false, error: "Invalid distance for this event" }, { status: 400 });
     }
+    // Publishing results closes a distance for good, regardless of the entry deadline.
+    if (distById.get(did)?.results_published_at) {
+      const closedUrl = new URL(`/events/${eventId}/entry-closed`, request.url);
+      return NextResponse.redirect(closedUrl, 303);
+    }
     const cutoff = distanceCutoffs.get(did) ?? defaultCutoff;
     if (cutoff != null && !Number.isNaN(cutoff.getTime()) && now > cutoff) {
       const closedUrl = new URL(`/events/${eventId}/entry-closed`, request.url);
       return NextResponse.redirect(closedUrl, 303);
+    }
+  }
+
+  const tierBlockedIds = [
+    ...primaryDistanceIds,
+    ...rollOverSelections.map((r) => r.targetDistanceId),
+  ];
+  for (const did of tierBlockedIds) {
+    const dist = distById.get(did);
+    if (!dist) continue;
+    if (!tierCanEnterDistance(memberTier, dist)) {
+      const label = dist.label?.trim() || "This race";
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `${label}: ${distanceTierRequirementLabel(dist)}.`,
+          redirect: "/membership/renew",
+        },
+        { status: 403 },
+      );
     }
   }
 
@@ -176,10 +208,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .in("distance_id", primaryDistanceIds);
 
   if (existingEntries && existingEntries.length > 0) {
-    return NextResponse.json(
-      { ok: false, error: "You already have an entry for one or more of these races" },
-      { status: 409 },
-    );
+    const enterUrl = new URL(`/events/${eventId}/enter`, request.url);
+    enterUrl.searchParams.set("error", "already_entered");
+    return NextResponse.redirect(enterUrl, { status: 303 });
   }
 
   const phoneVal =

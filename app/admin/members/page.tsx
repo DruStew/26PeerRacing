@@ -1,15 +1,15 @@
 import { MemberRoleToggles } from "@/components/admin/MemberRoleToggles";
-import { GLOBAL_ROLE_SCOPE_ID } from "@/lib/admin/constants";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { MemberTierSelect } from "@/components/admin/MemberTierSelect";
+import { isGlobalScopedRole } from "@/lib/admin/platform-roles";
+import { requireAdmin } from "@/lib/admin/require-admin";
+import { fetchMembershipTierConfigs } from "@/lib/membership-tier-config.server";
 
 function hasGlobalRole(
   roleRows: { role: string; scope_event_id: string | null }[],
   role: string,
 ): boolean {
   return roleRows.some(
-    (r) =>
-      r.role === role &&
-      (r.scope_event_id == null || r.scope_event_id === GLOBAL_ROLE_SCOPE_ID),
+    (r) => r.role === role && isGlobalScopedRole(r.scope_event_id),
   );
 }
 
@@ -20,8 +20,9 @@ export default async function AdminMembersPage({
 }) {
   const { q } = await searchParams;
   const query = (q ?? "").trim();
-
-  const supabase = await createServerSupabaseClient();
+  const { supabase, admin } = await requireAdmin("/admin/members");
+  const tierConfigs = await fetchMembershipTierConfigs();
+  const activeTiers = tierConfigs.filter((t) => t.is_active);
 
   let list: {
     id: unknown;
@@ -76,6 +77,19 @@ export default async function AdminMembersPage({
     }
   }
 
+  const membershipByUser = new Map<string, string>();
+  if (ids.length > 0) {
+    const { data: membershipRows } = await supabase
+      .from("memberships")
+      .select("user_id, tier")
+      .in("user_id", ids);
+
+    for (const m of membershipRows ?? []) {
+      const tier = (m.tier as string | null) ?? "free";
+      membershipByUser.set(m.user_id as string, tier);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-12">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">
@@ -85,10 +99,9 @@ export default async function AdminMembersPage({
         Members & Roles
       </h1>
       <p className="mt-3 max-w-2xl text-pretty text-[#1E3A5F]/75">
-        Search by name or email. Toggle admin, promoter, or race check-in (the{" "}
-        <code className="rounded bg-[#1E3A5F]/10 px-1 py-0.5 text-xs">booth</code> role in the
-        database). Updates sync to Supabase <code className="rounded bg-[#1E3A5F]/10 px-1 py-0.5 text-xs">roles</code>{" "}
-        for global access.
+        Search by name or email. Set platform roles (Super Admin, Admin, Promoter) and membership
+        level (Free, PR-Team, Top Tier, etc.). Members with no role toggled are regular{" "}
+        <strong>Member</strong> accounts.
       </p>
 
       <form method="get" className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -130,12 +143,14 @@ export default async function AdminMembersPage({
           const id = p.id as string;
           const rr = rolesByUser.get(id) ?? [];
           const initial = {
+            superAdmin: hasGlobalRole(rr, "super_admin"),
             admin: hasGlobalRole(rr, "admin"),
             promoter: hasGlobalRole(rr, "promoter"),
             booth: hasGlobalRole(rr, "booth"),
           };
           const name =
             [p.first_name, p.last_name].filter(Boolean).join(" ") || (p.email as string) || id;
+          const memberTier = membershipByUser.get(id) ?? "free";
 
           return (
             <li
@@ -170,8 +185,21 @@ export default async function AdminMembersPage({
                   </div>
                 </div>
                 <div className="w-full shrink-0 lg:max-w-sm">
-                  <h3 className="text-sm font-semibold text-[#1E3A5F]">Roles</h3>
-                  <MemberRoleToggles userId={id} initial={initial} />
+                  <h3 className="text-sm font-semibold text-[#1E3A5F]">Platform Roles</h3>
+                  <MemberRoleToggles
+                    userId={id}
+                    canManagePrivilegedRoles={admin.isSuperAdmin}
+                    initial={initial}
+                  />
+                  <MemberTierSelect
+                    userId={id}
+                    initialTier={memberTier}
+                    tiers={activeTiers.map((t) => ({
+                      slug: t.slug,
+                      display_name: t.display_name,
+                      price_cents: t.price_cents,
+                    }))}
+                  />
                 </div>
               </div>
             </li>

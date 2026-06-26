@@ -57,7 +57,7 @@ function RunnerTable({ rows, emptyText }: { rows: RosterRunner[]; emptyText: str
                       }`}
                     >
                       {d.label}
-                      {d.entryType === "roll_over" ? " (roll-over)" : ""}
+                      {d.entryType === "roll_over" ? " (Carry-Over)" : ""}
                       {d.checkedIn ? " ✓" : ""}
                     </span>
                   ))}
@@ -130,7 +130,7 @@ export function RosterSearchClient({
 
       <section className="mt-10">
         <h2 className="font-display text-xl font-bold text-[#1E3A5F]">
-          Paid, not checked in{" "}
+          Paid, Not Checked In{" "}
           <span className="font-sans text-base font-semibold text-[#1E3A5F]/55">
             ({query ? `${fNot.length} of ${notCheckedIn.length}` : notCheckedIn.length})
           </span>
@@ -147,7 +147,7 @@ export function RosterSearchClient({
       {partial.length > 0 ? (
         <section className="mt-10">
           <h2 className="font-display text-xl font-bold text-[#1E3A5F]">
-            Partially checked in{" "}
+            Partially Checked In{" "}
             <span className="font-sans text-base font-semibold text-[#1E3A5F]/55">
               ({query ? `${fPartial.length} of ${partial.length}` : partial.length})
             </span>
@@ -159,7 +159,7 @@ export function RosterSearchClient({
 
       <section className="mt-10">
         <h2 className="font-display text-xl font-bold text-[#1E3A5F]">
-          Checked in{" "}
+          Checked In{" "}
           <span className="font-sans text-base font-semibold text-[#1E3A5F]/55">
             ({query ? `${fChecked.length} of ${checkedIn.length}` : checkedIn.length})
           </span>

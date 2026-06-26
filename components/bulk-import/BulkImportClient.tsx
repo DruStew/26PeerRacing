@@ -124,7 +124,7 @@ export function BulkImportClient({
       </p>
 
       <div className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-5 text-sm text-[#1E3A5F]/85 shadow-sm sm:p-6">
-        <h2 className="font-display text-base font-semibold text-[#1E3A5F]">CSV format</h2>
+        <h2 className="font-display text-base font-semibold text-[#1E3A5F]">CSV Format</h2>
         <p className="mt-2">
           Required columns: <code className="rounded bg-[#1E3A5F]/10 px-1">email</code>,{" "}
           <code className="rounded bg-[#1E3A5F]/10 px-1">first_name</code>,{" "}

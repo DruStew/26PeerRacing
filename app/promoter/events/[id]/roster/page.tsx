@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { EventNav } from "@/components/promoter/EventNav";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
@@ -57,14 +58,9 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
   const { data: event, error } = await supabase.from("events").select("id,name,promoter_id").eq("id", id).single();
   if (error || !event) notFound();
 
-  const isPromoter = auth.user.id === (event as { promoter_id?: string }).promoter_id;
-  const { data: adminRoleRow } = await supabase
-    .from("roles")
-    .select("role")
-    .eq("user_id", auth.user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (!isPromoter && !adminRoleRow) notFound();
+  if (!(await canManageEvent(supabase, auth.user.id, (event as { promoter_id?: string }).promoter_id))) {
+    notFound();
+  }
 
   const service = createServiceRoleSupabaseClient();
   if (!service) {

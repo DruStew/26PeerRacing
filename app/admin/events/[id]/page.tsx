@@ -161,7 +161,7 @@ export default async function AdminEventDetailPage({ params }: { params: Promise
 
           <div className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-white p-5 shadow-sm sm:p-6">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Distances and Field</h2>
+              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Distances And Field</h2>
               <p className="text-xs text-[#1E3A5F]/60">
                 Entry fee × entered = rough gross per distance (for payoff math).
               </p>

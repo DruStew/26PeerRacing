@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { EventNav } from "@/components/promoter/EventNav";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { PromoterKioskClient } from "./PromoterKioskClient";
@@ -29,14 +30,7 @@ export default async function PromoterKioskPage({ params }: { params: Promise<{ 
   }
 
   const promoterId = (event as { promoter_id?: string }).promoter_id;
-  const isPromoter = user.id === promoterId;
-  const { data: adminRoleRow } = await supabase
-    .from("roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (!isPromoter && !adminRoleRow) {
+  if (!(await canManageEvent(supabase, user.id, promoterId))) {
     notFound();
   }
 

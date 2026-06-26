@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { EventNav } from "@/components/promoter/EventNav";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { ResultsImportClient } from "@/components/promoter/ResultsImportClient";
+import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export default async function ResultsImportPage({
@@ -28,14 +29,7 @@ export default async function ResultsImportPage({
     notFound();
   }
 
-  const isPromoter = auth.user.id === (event as { promoter_id?: string }).promoter_id;
-  const { data: adminRoleRow } = await supabase
-    .from("roles")
-    .select("role")
-    .eq("user_id", auth.user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (!isPromoter && !adminRoleRow) {
+  if (!(await canManageEvent(supabase, auth.user.id, (event as { promoter_id?: string }).promoter_id))) {
     notFound();
   }
 
@@ -70,7 +64,7 @@ export default async function ResultsImportPage({
         <div className="mt-6 border-b border-[#1E3A5F]/10 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race night</p>
           <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
-            Finish-time import
+            Finish-Time Import
           </h1>
           <p className="mt-2 text-sm text-[#1E3A5F]/75">{event.name}</p>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#1E3A5F]/70">

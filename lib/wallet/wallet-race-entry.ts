@@ -11,6 +11,20 @@ function looksLikeUnknownSourceColumn(err: { message?: string } | null): boolean
   );
 }
 
+const INSUFFICIENT_MESSAGE =
+  "Wallet balance changed — not enough to cover this entry. Refresh and try again.";
+
+function looksLikeMissingFunction(err: { message?: string; code?: string } | null): boolean {
+  if (!err) return false;
+  const m = (err.message ?? "").toLowerCase();
+  return (
+    err.code === "PGRST202" ||
+    m.includes("could not find the function") ||
+    (m.includes("function") && m.includes("does not exist")) ||
+    m.includes("schema cache")
+  );
+}
+
 export async function walletApplyDebitForRaceEntry(
   admin: SupabaseClient,
   args: {
@@ -23,16 +37,37 @@ export async function walletApplyDebitForRaceEntry(
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   if (args.amountCents <= 0) return { ok: true };
 
-  const bal = await sumWalletBalanceCents(admin, args.userId);
-  if (bal < args.amountCents) {
-    return {
-      ok: false,
-      message: "Wallet balance changed — not enough to cover this entry. Refresh and try again.",
-    };
-  }
-
   const label = `Race entry — ${args.eventName}`;
   const metadata = { ...(args.metadata ?? {}), event_id: args.eventId };
+
+  // Preferred path: atomic, advisory-locked debit in the DB. It re-reads the
+  // balance under a per-user lock and rejects overdraft, so concurrent entries
+  // (double-submit / two tabs) can never overspend the wallet.
+  const rpc = await admin.rpc("wallet_apply_debit_for_race_entry", {
+    p_user_id: args.userId,
+    p_amount_cents: args.amountCents,
+    p_event_id: args.eventId,
+    p_label: label,
+    p_metadata: args.metadata ?? {},
+  });
+  if (!rpc.error) return { ok: true };
+
+  const rpcMsg = (rpc.error.message ?? "").toLowerCase();
+  if (rpcMsg.includes("insufficient_wallet_balance") || rpc.error.code === "P0001") {
+    return { ok: false, message: INSUFFICIENT_MESSAGE };
+  }
+  // Only fall back if the RPC simply isn't deployed; any other RPC error is real.
+  if (!looksLikeMissingFunction(rpc.error)) {
+    return { ok: false, message: rpc.error.message };
+  }
+
+  // Fallback (older DBs without the RPC): best-effort JS check + insert. Not
+  // concurrency-safe, but matches legacy behavior until the migration is applied.
+  const bal = await sumWalletBalanceCents(admin, args.userId);
+  if (bal < args.amountCents) {
+    return { ok: false, message: INSUFFICIENT_MESSAGE };
+  }
+
   const base = {
     user_id: args.userId,
     amount_cents: -args.amountCents,
@@ -50,10 +85,7 @@ export async function walletApplyDebitForRaceEntry(
   if (error) {
     const m = error.message ?? "";
     if (m.includes("insufficient_wallet_balance") || m.includes("P0001")) {
-      return {
-        ok: false,
-        message: "Wallet balance changed — not enough to cover this entry. Refresh and try again.",
-      };
+      return { ok: false, message: INSUFFICIENT_MESSAGE };
     }
     return { ok: false, message: m };
   }
@@ -70,6 +102,20 @@ export async function walletCreditAdjustment(
   },
 ): Promise<void> {
   if (args.amountCents <= 0) return;
+
+  const rpc = await admin.rpc("wallet_credit_adjustment", {
+    p_user_id: args.userId,
+    p_amount_cents: args.amountCents,
+    p_label: args.label,
+    p_metadata: args.metadata ?? {},
+  });
+  if (!rpc.error) return;
+
+  if (!looksLikeMissingFunction(rpc.error)) {
+    console.error("walletCreditAdjustment RPC:", rpc.error.message);
+    return;
+  }
+
   const base = {
     user_id: args.userId,
     amount_cents: args.amountCents,

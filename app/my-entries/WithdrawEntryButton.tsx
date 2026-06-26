@@ -127,7 +127,7 @@ export function WithdrawEntryButton({
 
             {hasLinkedRollOvers === true ? (
               <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2.5 text-center text-sm text-amber-950/90 ring-1 ring-amber-600/20">
-                This will also remove your linked qualifier roll-over entries for this event.
+                This will also remove your linked qualifier Carry-Over entries for this event.
               </p>
             ) : null}
 

@@ -3,12 +3,19 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CheckInStripeSync } from "./CheckInStripeSync";
+import { KioskCreateMemberPanel } from "@/components/kiosk/KioskCreateMemberPanel";
+import { KioskWalkUpEntryForm, type KioskEnterFlow } from "@/components/kiosk/KioskWalkUpEntryForm";
+import {
+  carryOverLinkedEntryIds,
+  carryOverLinkedLabels,
+  hasCarryOverLink,
+} from "@/lib/kiosk/carry-over-entry-group";
 
 /** One row per runner from kiosk search; `id` is any entry id for this user+event (for API fallback). */
 type SearchRow = {
   id: string;
   user_id?: string | null;
+  kind?: "entrant" | "member";
   /** Peer Racing ID / canonical bib # (profiles.pr_id). */
   pr_id?: string | null;
   first_name: string;
@@ -57,6 +64,23 @@ type RollOpt = {
   entry_fee_cents: number;
 };
 
+type RunnerState = {
+  profile: RunnerProfile;
+  entries: RunnerEntry[];
+  upsellDistances: UpsellDist[];
+  rollOverOptions: RollOpt[];
+  profileComplete?: boolean;
+  membership?: { tier: string; tierLabel: string; active: boolean };
+  isWalkUp?: boolean;
+  enterFlow?: KioskEnterFlow;
+};
+
+type WalkUpSuccessNotice = {
+  firstName: string;
+  lastName: string;
+  distanceLabels: string[];
+};
+
 function searchResultKey(row: SearchRow) {
   return (
     row.user_id ??
@@ -71,6 +95,39 @@ function safeEntryCount(n: unknown): number {
 
 function isCarryOverEntry(e: RunnerEntry) {
   return e.entry_type === "roll_over";
+}
+
+type KioskEntryPatch = {
+  id: string;
+  kiosk_checked_in_at?: string | null;
+  transponder_1?: string | null;
+  transponder_2?: string | null;
+  assigned_bib?: string | null;
+};
+
+function applyKioskEntryPatches(entries: RunnerEntry[], patches: KioskEntryPatch[]): RunnerEntry[] {
+  const byId = new Map(patches.map((p) => [p.id, p]));
+  return entries.map((en) => {
+    const patch = byId.get(en.id);
+    if (!patch) return en;
+    return {
+      ...en,
+      kiosk_checked_in_at:
+        patch.kiosk_checked_in_at !== undefined ? patch.kiosk_checked_in_at : en.kiosk_checked_in_at,
+      transponder_1: patch.transponder_1 !== undefined ? patch.transponder_1 : en.transponder_1,
+      transponder_2: patch.transponder_2 !== undefined ? patch.transponder_2 : en.transponder_2,
+      assigned_bib: patch.assigned_bib !== undefined ? patch.assigned_bib : en.assigned_bib,
+    };
+  });
+}
+
+function sharesLinkedCheckInAction(
+  entries: RunnerEntry[],
+  entryId: string,
+  actionEntryId: string | null,
+): boolean {
+  if (!actionEntryId) return false;
+  return carryOverLinkedEntryIds(entries, actionEntryId).includes(entryId);
 }
 
 /** Qualifier / primary row that owns the RFID pair for a carry-over split. */
@@ -89,13 +146,11 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   /** Which search group row is selected (stable while user_id may be missing from API). */
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
-  const [runner, setRunner] = useState<{
-    profile: RunnerProfile;
-    entries: RunnerEntry[];
-    upsellDistances: UpsellDist[];
-    rollOverOptions: RollOpt[];
-  } | null>(null);
+  const [runner, setRunner] = useState<RunnerState | null>(null);
   const [loadRunnerPending, setLoadRunnerPending] = useState(false);
+  const [checkoutSyncPending, setCheckoutSyncPending] = useState(false);
+  const [walkUpSuccessNotice, setWalkUpSuccessNotice] = useState<WalkUpSuccessNotice | null>(null);
+  const checkoutHandledRef = useRef(false);
 
   const [t1, setT1] = useState("");
   const [t2, setT2] = useState("");
@@ -111,11 +166,13 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
   const [addPending, setAddPending] = useState(false);
   const [withdrawPendingId, setWithdrawPendingId] = useState<string | null>(null);
   const [checkInPendingId, setCheckInPendingId] = useState<string | null>(null);
+  const [undoCheckInPendingId, setUndoCheckInPendingId] = useState<string | null>(null);
   /** Bib from search row if profile/entries haven’t loaded pr_id yet (same DB, kiosk display). */
   const [kioskBibFallback, setKioskBibFallback] = useState<string | null>(null);
 
   /** Full-screen runner panel after picking a search result; Done clears search for the next athlete. */
   const [runnerModalOpen, setRunnerModalOpen] = useState(false);
+  const [createMemberOpen, setCreateMemberOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   /** Merge duplicate search rows if the API returned more than one group for the same person (legacy DB). */
@@ -216,6 +273,10 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
           entries?: RunnerEntry[];
           upsellDistances?: UpsellDist[];
           rollOverOptions?: RollOpt[];
+          profileComplete?: boolean;
+          membership?: { tier: string; tierLabel: string; active: boolean };
+          isWalkUp?: boolean;
+          enterFlow?: KioskEnterFlow;
           error?: string;
         };
         if (!res.ok || !json.ok || !json.profile) {
@@ -223,20 +284,27 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
             setError(json.error ?? "Could not load runner");
             setRunner(null);
           }
-          return;
+          return null;
         }
-        setSelectedUserId(json.profile.id);
-        setRunner({
+        const data: RunnerState = {
           profile: json.profile,
           entries: json.entries ?? [],
           upsellDistances: json.upsellDistances ?? [],
           rollOverOptions: json.rollOverOptions ?? [],
-        });
+          profileComplete: json.profileComplete,
+          membership: json.membership,
+          isWalkUp: json.isWalkUp,
+          enterFlow: json.enterFlow,
+        };
+        setSelectedUserId(json.profile.id);
+        setRunner(data);
+        return data;
       } catch {
         if (!opts.quietRefresh) {
           setError("Network error");
           setRunner(null);
         }
+        return null;
       } finally {
         setLoadRunnerPending(false);
       }
@@ -248,19 +316,107 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
     const checkout = searchParams.get("checkout");
     const sessionId = searchParams.get("session_id");
     const kioskUser = searchParams.get("kiosk_user");
+    const walkUp = searchParams.get("walk_up") === "1";
     const uid = kioskUser ?? selectedUserId;
-    if (checkout === "success" && sessionId && uid) {
-      setRunnerModalOpen(true);
-      void loadRunner({ userId: uid });
+    if (checkout !== "success" || !sessionId || !uid) return;
+    if (checkoutHandledRef.current) return;
+    checkoutHandledRef.current = true;
+
+    if (kioskUser) setSelectedUserId(kioskUser);
+    setRunnerModalOpen(true);
+
+    void (async () => {
+      setCheckoutSyncPending(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/kiosk/check-in/sync-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId, sessionId }),
+        });
+        const json = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) {
+          setError(
+            json.error ??
+              "Payment completed but entries could not be confirmed. Search for the runner and verify.",
+          );
+        }
+      } catch {
+        setError("Network error syncing payment. Search for the runner to verify entry.");
+      } finally {
+        setCheckoutSyncPending(false);
+      }
+
+      const data = await loadRunner({ userId: uid });
+      if (walkUp && data) {
+        setWalkUpSuccessNotice({
+          firstName: data.profile.first_name,
+          lastName: data.profile.last_name,
+          distanceLabels: data.entries.map((e) => e.distance_label),
+        });
+      }
       router.replace(`/events/${eventId}/check-in`, { scroll: false });
-    }
+    })();
   }, [searchParams, eventId, selectedUserId, loadRunner, router]);
 
   function pickSearchRow(row: SearchRow) {
     setRunnerModalOpen(true);
     setSelectedGroupKey(searchResultKey(row));
     setKioskBibFallback(row.pr_id?.trim() || row.bib?.trim() || null);
-    void loadRunner({ userId: row.user_id ?? undefined, entryId: row.id });
+    void loadRunner({
+      userId: row.user_id ?? undefined,
+      entryId: row.kind === "member" ? undefined : row.id,
+    });
+  }
+
+  async function walkUpSubmitEntry(payload: {
+    primaryDistanceIds: string[];
+    rollOverSelections: { targetDistanceId: string; sourceDistanceId: string }[];
+    useWallet: boolean;
+  }) {
+    if (!selectedUserId) return;
+    setAddPending(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/kiosk/check-in/walk-up-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId,
+          userId: selectedUserId,
+          primaryDistanceIds: payload.primaryDistanceIds,
+          rollOverSelections: payload.rollOverSelections,
+          useWallet: payload.useWallet,
+        }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        kind?: string;
+        url?: string;
+        walkUpAutoCheckedIn?: boolean;
+        error?: string;
+      };
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Could not start registration");
+        return;
+      }
+      if (json.kind === "stripe" && json.url) {
+        window.location.href = json.url;
+        return;
+      }
+      const data = await loadRunner({ userId: selectedUserId });
+      if (json.walkUpAutoCheckedIn && data) {
+        setWalkUpSuccessNotice({
+          firstName: data.profile.first_name,
+          lastName: data.profile.last_name,
+          distanceLabels: data.entries.map((e) => e.distance_label),
+        });
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setAddPending(false);
+    }
   }
 
   const closeRunnerModal = useCallback(() => {
@@ -271,10 +427,16 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
     setActiveEntryId(null);
     setKioskBibFallback(null);
     setSearchRows(null);
+    setWalkUpSuccessNotice(null);
     setQ("");
     setError(null);
     requestAnimationFrame(() => searchInputRef.current?.focus());
   }, []);
+
+  const dismissWalkUpSuccess = useCallback(() => {
+    setWalkUpSuccessNotice(null);
+    closeRunnerModal();
+  }, [closeRunnerModal]);
 
   function selectEntryForTransponders(e: RunnerEntry) {
     setActiveEntryId(e.id);
@@ -344,39 +506,20 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
       const json = (await res.json()) as {
         ok?: boolean;
         error?: string;
-        entry?: {
-          id: string;
-          kiosk_checked_in_at?: string | null;
-          transponder_1?: string | null;
-          transponder_2?: string | null;
-          assigned_bib?: string | null;
-        };
+        entry?: KioskEntryPatch;
+        entries?: KioskEntryPatch[];
       };
       if (!res.ok || !json.ok) {
         setError(json.error ?? "Could not confirm check-in");
         return;
       }
-      if (json.entry) {
-        const patch = json.entry;
+      const patches = json.entries?.length ? json.entries : json.entry ? [json.entry] : [];
+      if (patches.length > 0) {
         setRunner((prev) => {
           if (!prev) return prev;
-          const nextEntries = prev.entries.map((en) =>
-            en.id === patch.id
-              ? {
-                  ...en,
-                  kiosk_checked_in_at: patch.kiosk_checked_in_at ?? en.kiosk_checked_in_at,
-                  transponder_1:
-                    patch.transponder_1 !== undefined ? patch.transponder_1 : en.transponder_1,
-                  transponder_2:
-                    patch.transponder_2 !== undefined ? patch.transponder_2 : en.transponder_2,
-                  assigned_bib:
-                    patch.assigned_bib !== undefined ? patch.assigned_bib : en.assigned_bib,
-                }
-              : en,
-          );
           return {
             ...prev,
-            entries: nextEntries,
+            entries: applyKioskEntryPatches(prev.entries, patches),
           };
         });
       }
@@ -385,6 +528,51 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
       setError("Network error");
     } finally {
       setCheckInPendingId(null);
+    }
+  }
+
+  async function undoCheckInForEntry(entryId: string) {
+    const linkedLabels = runner ? carryOverLinkedLabels(runner.entries, entryId) : [];
+    const linked = linkedLabels.length > 1;
+    const confirmMessage = linked
+      ? `Undo check-in for linked Carry-Over races (${linkedLabels.join(" + ")})? All linked races will be marked not checked in.`
+      : "Undo check-in for this race? The runner will show as not checked in until you check them in again.";
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    setUndoCheckInPendingId(entryId);
+    setError(null);
+    try {
+      const res = await fetch("/api/kiosk/check-in/entry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, entryId, undoCheckIn: true }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        entry?: KioskEntryPatch;
+        entries?: KioskEntryPatch[];
+      };
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Could not undo check-in");
+        return;
+      }
+      const patches = json.entries?.length ? json.entries : json.entry ? [json.entry] : [];
+      if (patches.length > 0) {
+        setRunner((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            entries: applyKioskEntryPatches(prev.entries, patches),
+          };
+        });
+      }
+      if (selectedUserId) await loadRunner({ userId: selectedUserId, quietRefresh: true });
+    } catch {
+      setError("Network error");
+    } finally {
+      setUndoCheckInPendingId(null);
     }
   }
 
@@ -496,13 +684,23 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
 
   return (
     <div className="relative mt-10 space-y-8 text-left">
-      <CheckInStripeSync eventId={eventId} />
 
       <div>
-        <label className="block text-sm font-medium text-[#1E3A5F]">Find Runner (This Event)</label>
-        <p className="mt-1 text-xs text-[#1E3A5F]/60">
-          PR ID, assigned race bib, name, email, or phone — at least 2 characters.
-        </p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <label className="block text-sm font-medium text-[#1E3A5F]">Find runner</label>
+            <p className="mt-1 text-xs text-[#1E3A5F]/60">
+              PR ID, name, email, or phone — searches all members and this event&apos;s entrants.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCreateMemberOpen(true)}
+            className="shrink-0 rounded-md border border-[#E87722]/40 bg-[#fff8f3] px-4 py-2.5 text-sm font-semibold text-[#E87722] hover:bg-[#fff0e6]"
+          >
+            + Create new PR member
+          </button>
+        </div>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
             ref={searchInputRef}
@@ -534,7 +732,9 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
       ) : null}
 
       {searchRows && searchRows.length === 0 ? (
-        <p className="text-sm text-[#1E3A5F]/70">No matching entries for this event.</p>
+        <p className="text-sm text-[#1E3A5F]/70">
+          No matches. Try another search or create a new PR member.
+        </p>
       ) : null}
 
       {searchRows && searchRows.length > 0 ? (
@@ -545,7 +745,12 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
               const groupKey = searchResultKey(row);
               const bibShow = row.pr_id ?? row.bib ?? "—";
               const ec = safeEntryCount(row.entry_count);
-              const raceLabel = ec === 1 ? "1 race entered" : `${ec} races entered`;
+              const raceLabel =
+                row.kind === "member" && ec === 0
+                  ? "Not entered yet — walk-up"
+                  : ec === 1
+                    ? "1 race entered"
+                    : `${ec} races entered`;
               return (
                 <li key={groupKey}>
                   <button
@@ -585,8 +790,8 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
         >
           <div className="flex h-[100dvh] w-full max-w-2xl flex-col bg-white shadow-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl sm:border sm:border-[#1E3A5F]/10">
             <div className="shrink-0 border-b border-[#1E3A5F]/10 px-4 py-3 sm:rounded-t-2xl">
-              <p id="kiosk-runner-modal-title" className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1E3A5F]/55">
-                Runner check-in
+              <p id="kiosk-runner-modal-title" className="text-xs font-semibold tracking-[0.2em] text-[#1E3A5F]/55">
+                Runner Check-In
               </p>
               <p className="mt-1 truncate text-lg font-semibold text-[#1E3A5F]">
                 {runner
@@ -605,7 +810,9 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
               ) : null}
 
               {loadRunnerPending && !runner && !error ? (
-                <p className="text-sm text-[#1E3A5F]/70">Loading runner…</p>
+                <p className="text-sm text-[#1E3A5F]/70">
+                  {checkoutSyncPending ? "Confirming payment…" : "Loading runner…"}
+                </p>
               ) : null}
 
               {runner ? (
@@ -615,6 +822,14 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
               {runner.profile.first_name} {runner.profile.last_name}
             </p>
             <p className="mt-1 text-sm text-[#1E3A5F]/65">{runner.profile.email}</p>
+            {runner.membership ? (
+              <p className="mt-1 text-xs text-[#1E3A5F]/55">
+                Membership: <strong>{runner.membership.tierLabel}</strong>
+                {!runner.profileComplete ? (
+                  <span className="text-amber-800"> · Profile incomplete</span>
+                ) : null}
+              </p>
+            ) : null}
             <div className="mt-4 flex flex-wrap items-stretch justify-center gap-3">
               <div className="min-w-[10rem] rounded-xl bg-[#1E3A5F] px-5 py-3 text-white">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/65">
@@ -638,10 +853,13 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
           </div>
 
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#1E3A5F]/55">Races Entered</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#1E3A5F]/55">Races Entered</p>
             <ul className="mt-2 space-y-2">
               {runner.entries.map((e) => {
                 const chipPrimary = primaryEntryForCarryOver(runner.entries, e);
+                const linkedGroup = hasCarryOverLink(runner.entries, e.id);
+                const checkInPending = sharesLinkedCheckInAction(runner.entries, e.id, checkInPendingId);
+                const undoPending = sharesLinkedCheckInAction(runner.entries, e.id, undoCheckInPendingId);
                 return (
                 <li
                   key={e.id}
@@ -653,7 +871,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                     <div>
                       <p className="font-semibold text-[#1E3A5F]">{e.distance_label}</p>
                       <p className="text-xs text-[#1E3A5F]/55">
-                        {e.entry_type === "roll_over" ? "Carry-over split" : "Primary"} ·{" "}
+                        {e.entry_type === "roll_over" ? "Carry-Over split" : "Primary"} ·{" "}
                         {e.entry_kind === "paid" ? "Paid" : "Comp / free"}
                         {e.paid_at ? ` · ${new Date(e.paid_at).toLocaleDateString()}` : ""}
                       </p>
@@ -674,37 +892,59 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                           ) : (
                             <> — one physical start; chips are stored on your primary entry.</>
                           )}
+                          {linkedGroup ? (
+                            <>
+                              {" "}
+                              Check-in and undo apply to all linked Carry-Over races together.
+                            </>
+                          ) : null}
+                        </p>
+                      ) : linkedGroup ? (
+                        <p className="mt-2 max-w-md text-xs leading-snug text-[#1E3A5F]/70">
+                          Linked Carry-Over races check in together — confirm with the runner they are still good for
+                          each distance listed.
                         </p>
                       ) : null}
                     </div>
                     <div className="flex flex-col items-stretch gap-2 sm:items-end">
                       {e.kiosk_checked_in_at ? (
                         <div className="flex flex-col items-end gap-1">
-                          <button
-                            type="button"
-                            disabled
-                            className="cursor-default rounded-md bg-[#E87722]/90 px-3 py-1.5 text-xs font-semibold text-white opacity-95"
-                          >
+                          <span className="rounded-md bg-[#E87722]/90 px-3 py-1.5 text-xs font-semibold text-white">
                             Runner checked in
-                          </button>
+                          </span>
                           <span className="text-right text-[11px] text-[#1E3A5F]/55">
                             {new Date(e.kiosk_checked_in_at).toLocaleString(undefined, {
                               dateStyle: "short",
                               timeStyle: "short",
                             })}
                           </span>
+                          <button
+                            type="button"
+                            disabled={undoPending}
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              void undoCheckInForEntry(e.id);
+                            }}
+                            className="mt-1 rounded-md border border-[#1E3A5F]/25 bg-white px-3 py-1.5 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] disabled:opacity-50"
+                          >
+                            {undoPending ? "Undoing…" : linkedGroup ? "Undo check-in (linked)" : "Undo check-in"}
+                          </button>
                         </div>
                       ) : (
                         <button
                           type="button"
-                          disabled={checkInPendingId === e.id}
+                          disabled={checkInPending}
                           onClick={(ev) => {
                             ev.stopPropagation();
                             void confirmCheckInForEntry(e.id);
                           }}
                           className="rounded-md bg-[#E87722] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#E87722]/90 disabled:opacity-50"
                         >
-                          {checkInPendingId === e.id ? "Saving…" : "Check In Runner"}
+                          {checkInPending
+                            ? "Saving…"
+                            : linkedGroup
+                              ? "Check in (linked races)"
+                              : "Check In Runner"}
                         </button>
                       )}
                       <div className="flex flex-wrap justify-end gap-2">
@@ -745,7 +985,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
               </p>
               {hasCarryOverSplit ? (
                 <p className="mt-2 text-xs text-[#1E3A5F]/75">
-                  Carry-over splits you added from the qualifier use these same chips — you only run once; no separate
+                  Carry-Over splits you added from the qualifier use these same chips — you only run once; no separate
                   transponder row for splits.
                 </p>
               ) : null}
@@ -863,10 +1103,24 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
             </div>
           ) : null}
 
-          {(runner.upsellDistances.length > 0 || runner.rollOverOptions.length > 0) && (
+          {runner.isWalkUp && runner.enterFlow ? (
+            <div className="space-y-4">
+              <p className="text-xs font-semibold tracking-[0.15em] text-[#1E3A5F]/55">
+                Enter A Race (Walk-Up)
+              </p>
+              <KioskWalkUpEntryForm
+                enterFlow={runner.enterFlow}
+                pending={addPending}
+                profileComplete={runner.profileComplete !== false}
+                onSubmit={walkUpSubmitEntry}
+              />
+            </div>
+          ) : null}
+
+          {!runner.isWalkUp && (runner.upsellDistances.length > 0 || runner.rollOverOptions.length > 0) ? (
             <div className="space-y-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-[#1E3A5F]/55">
-                Add another race
+              <p className="text-xs font-semibold tracking-[0.15em] text-[#1E3A5F]/55">
+                Add Another Race
               </p>
               <p className="text-xs text-[#1E3A5F]/60">
                 Wallet applies first when available; otherwise Stripe opens for the card.
@@ -874,7 +1128,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
 
               {runner.upsellDistances.length > 0 ? (
                 <div>
-                  <p className="text-sm font-semibold text-[#1E3A5F]">Standalone races</p>
+                  <p className="text-sm font-semibold text-[#1E3A5F]">Standalone Races</p>
                   <p className="mt-1 text-xs text-[#1E3A5F]/65">
                     A separate start — this runner will get their own RFID pair for this distance at check-in.
                   </p>
@@ -888,7 +1142,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                           <span className="font-medium text-[#1E3A5F]">
                             {d.label}{" "}
                             <span className="text-sm font-normal text-[#1E3A5F]/65">
-                              (${(d.entry_fee_cents / 100).toFixed(2)})
+                              (${(d.entry_fee_cents / 100).toFixed(2)} entry)
                             </span>
                           </span>
                           <p className="mt-1 text-xs text-[#1E3A5F]/55">Primary entry · own transponders</p>
@@ -909,7 +1163,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
 
               {runner.rollOverOptions.length > 0 ? (
                 <div>
-                  <p className="text-sm font-semibold text-[#1E3A5F]">Carry-over splits (same chips)</p>
+                  <p className="text-sm font-semibold text-[#1E3A5F]">Carry-Over Splits (Same Chips)</p>
                   <p className="mt-1 text-xs text-[#1E3A5F]/65">
                     Splits from the Peer Racing Qualifier — one physical race; timing uses the same RFID chips already set
                     on the primary race. No second transponder assignment.
@@ -927,7 +1181,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                               (${(r.entry_fee_cents / 100).toFixed(2)})
                             </span>
                           </span>
-                          <p className="mt-1 text-xs text-[#1E3A5F]/55">Qualifier carry-over · shared RFID</p>
+                          <p className="mt-1 text-xs text-[#1E3A5F]/55">Qualifier Carry-Over · shared RFID</p>
                         </div>
                         <button
                           type="button"
@@ -941,7 +1195,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                           }
                           className="shrink-0 rounded-md bg-[#E87722] px-4 py-2 text-xs font-semibold text-white hover:bg-[#E87722]/90 disabled:opacity-50"
                         >
-                          {addPending ? "Working…" : "Add carry-over"}
+                          {addPending ? "Working…" : "Add Carry-Over"}
                         </button>
                       </li>
                     ))}
@@ -949,7 +1203,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                 </div>
               ) : null}
             </div>
-          )}
+          ) : null}
         </div>
               ) : null}
             </div>
@@ -966,6 +1220,63 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
                 Closes this runner and clears the search — use when finished, or if you were only checking status.
               </p>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {createMemberOpen ? (
+        <KioskCreateMemberPanel
+          eventId={eventId}
+          onClose={() => setCreateMemberOpen(false)}
+          onCreated={(userId) => {
+            setCreateMemberOpen(false);
+            setRunnerModalOpen(true);
+            setSelectedUserId(userId);
+            void loadRunner({ userId });
+          }}
+        />
+      ) : null}
+
+      {walkUpSuccessNotice ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-[#1E3A5F]/55 p-4 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="walk-up-success-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-8 text-center shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+              <svg className="h-9 w-9 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h2 id="walk-up-success-title" className="font-display mt-5 text-2xl font-bold text-[#1E3A5F]">
+              {walkUpSuccessNotice.firstName} {walkUpSuccessNotice.lastName}
+            </h2>
+            <p className="mt-2 text-base font-semibold text-emerald-800">Entered, paid, and checked in!</p>
+            <p className="mt-1 text-sm text-[#1E3A5F]/70">Walk-up registration complete — ready for race day.</p>
+            {walkUpSuccessNotice.distanceLabels.length > 0 ? (
+              <ul className="mt-4 space-y-1.5 text-left text-sm text-[#1E3A5F]">
+                {walkUpSuccessNotice.distanceLabels.map((label) => (
+                  <li
+                    key={label}
+                    className="flex items-center gap-2 rounded-lg border border-[#1E3A5F]/10 bg-[#fafbfc] px-3 py-2"
+                  >
+                    <span className="text-emerald-600" aria-hidden>
+                      ✓
+                    </span>
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <button
+              type="button"
+              onClick={dismissWalkUpSuccess}
+              className="mt-6 w-full rounded-xl bg-[#E87722] px-6 py-3.5 text-base font-semibold text-white hover:bg-[#E87722]/90"
+            >
+              Done — next runner
+            </button>
           </div>
         </div>
       ) : null}

@@ -6,6 +6,11 @@ export type RaceEntryPendingPayload = {
   bib: string | null;
   /** Cents to debit from wallet when Stripe checkout completes (remainder charged on Stripe). */
   walletAppliedCents?: number;
+  /** Kiosk walk-up: apply paid membership tier when checkout completes. */
+  kioskWalkUpMembership?: {
+    tier: string;
+    priceCents: number;
+  };
 };
 
 type DistanceRow = {

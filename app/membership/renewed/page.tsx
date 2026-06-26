@@ -46,7 +46,7 @@ export default async function MembershipRenewedPage({
           Welcome Back
         </h1>
         <p className="mt-3 text-pretty text-lg font-medium text-[#1E3A5F]/90">
-          Membership renewed
+          Membership Renewed
         </p>
         <p className="mt-4 text-pretty text-sm leading-relaxed text-[#1E3A5F]/75">
           Thanks for renewing. You can keep registering for races and managing your entries.

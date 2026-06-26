@@ -134,7 +134,7 @@ export default async function PromoterDashboardPage() {
               href="/promoter/bulk-import"
               className="inline-flex items-center justify-center rounded-md border-2 border-[#1E3A5F]/20 px-5 py-3 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
             >
-              Bulk import CSV
+              Bulk Import CSV
             </Link>
           </div>
         </div>

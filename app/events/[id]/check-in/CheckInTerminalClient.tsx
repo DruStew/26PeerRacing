@@ -3,7 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-export function CheckInTerminalClient({ terminalLabel }: { terminalLabel: string }) {
+export function CheckInTerminalClient({
+  eventId,
+  terminalLabel,
+}: {
+  eventId: string;
+  terminalLabel: string;
+}) {
   const router = useRouter();
   const [closeStep, setCloseStep] = useState<0 | 1 | 2>(0);
 
@@ -24,7 +30,7 @@ export function CheckInTerminalClient({ terminalLabel }: { terminalLabel: string
       setCloseStep(2);
       const res = await fetch("/api/kiosk/close", { method: "POST" });
       if (res.ok) {
-        router.push("/kiosk");
+        router.push(`/kiosk/${eventId}`);
         return;
       }
       setCloseStep(0);
@@ -47,7 +53,7 @@ export function CheckInTerminalClient({ terminalLabel }: { terminalLabel: string
           </button>
         ) : closeStep === 1 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-            <p>Close this terminal? You&apos;ll need the new kiosk code to sign in again on this device.</p>
+            <p>Close this terminal? You&apos;ll need the kiosk code to sign in again on this device.</p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"

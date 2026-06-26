@@ -2,11 +2,20 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { formatDateTimeLocal } from "@/lib/datetime-local";
+import { formatDistanceDisplay } from "@/lib/distance-display";
+import {
+  defaultDatetimeLocalFromRaceDay,
+  formatDateTimeLocal,
+} from "@/lib/datetime-local";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { EventScheduleForm } from "@/components/events/EventScheduleForm";
+import { DeleteEventSection } from "@/components/promoter/DeleteEventSection";
+import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
+import { VenuePickerLazy } from "@/components/maps/VenuePickerLazy";
+import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
+import { canManageEvent } from "@/lib/promoter/event-access";
 
 import { EventArtworkSection } from "./EventArtworkSection";
 
@@ -36,7 +45,9 @@ export default async function EditEventPage({
 
   const { data: event, error } = await supabase
     .from("events")
-    .select("id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url")
+    .select(
+      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,promoter_id",
+    )
     .eq("id", id)
     .single();
 
@@ -44,15 +55,9 @@ export default async function EditEventPage({
     notFound();
   }
 
-  const eventPromoterId = (event as { promoter_id?: string }).promoter_id;
-  const isPromoter = data.user.id === eventPromoterId;
-  const { data: adminRoleRow } = await supabase
-    .from("roles")
-    .select("role")
-    .eq("user_id", data.user.id)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (!isPromoter && !adminRoleRow) {
+  const eventPromoterId = (event as { promoter_id: string }).promoter_id;
+  const allowed = await canManageEvent(supabase, data.user.id, eventPromoterId);
+  if (!allowed) {
     notFound();
   }
 
@@ -62,20 +67,20 @@ export default async function EditEventPage({
 
   const { data: distancesSchedule } = await supabase
     .from("distances")
-    .select("id,label,gun_time,pr_cutoff")
+    .select("id,label,race_name,gun_time,pr_cutoff")
     .eq("event_id", id)
     .order("gun_time", { ascending: true, nullsFirst: true });
 
   const { data: distances } = await supabase
     .from("distances")
-    .select("id,label,gun_time")
+    .select("id,label,race_name,gun_time")
     .eq("event_id", id)
     .order("gun_time", { ascending: true, nullsFirst: true })
     .range(from, to);
 
   const { data: qualifierDistance } = await supabase
     .from("distances")
-    .select("id,label")
+    .select("id,label,race_name")
     .eq("event_id", id)
     .eq("is_peer_racing_qualifier", true)
     .maybeSingle();
@@ -86,6 +91,15 @@ export default async function EditEventPage({
     .eq("event_id", id);
 
   const totalPages = count ? Math.ceil(count / PAGE_SIZE) : 1;
+
+  const [{ count: entryCount }, { count: publishedDistanceCount }] = await Promise.all([
+    supabase.from("entries").select("id", { count: "exact", head: true }).eq("event_id", id),
+    supabase
+      .from("distances")
+      .select("id", { count: "exact", head: true })
+      .eq("event_id", id)
+      .not("results_published_at", "is", null),
+  ]);
 
   const addDistance = async (formData: FormData) => {
     "use server";
@@ -98,6 +112,8 @@ export default async function EditEventPage({
     }
 
     const label = String(formData.get("label") ?? "").trim();
+    const raceNameRaw = String(formData.get("race_name") ?? "").trim();
+    const raceName = raceNameRaw || null;
     const gunTimeRaw = String(formData.get("gun_time") ?? "").trim();
     const gunTime = gunTimeRaw ? new Date(gunTimeRaw).toISOString() : null;
     const prCutoffRaw = String(formData.get("pr_cutoff") ?? "").trim();
@@ -124,11 +140,14 @@ export default async function EditEventPage({
       return Math.round(d * 100);
     })();
 
+    const tierFlags = parseDistanceTierFlagsFromForm(formData);
+
     const { error: insertError } = await supabase
       .from("distances")
       .insert({
         event_id: id,
         label,
+        race_name: raceName,
         gun_time: gunTime,
         pr_cutoff: prCutoff,
         is_peer_racing_qualifier: isQualifier,
@@ -137,6 +156,7 @@ export default async function EditEventPage({
         allow_pacers: allowPacers,
         pacer_fee_cents: pacerFeeCents,
         entry_fee_cents: entryFeeCents,
+        ...tierFlags,
       })
       .select("id")
       .single();
@@ -172,6 +192,9 @@ export default async function EditEventPage({
 
   const location = [event.city, event.state].filter(Boolean).join(", ") || "—";
   const published = event.status === "published";
+  const raceDay = event.race_date as string | null;
+  const defaultGunTime = defaultDatetimeLocalFromRaceDay(raceDay, 8, 0);
+  const defaultEntryDeadline = defaultDatetimeLocalFromRaceDay(raceDay, 23, 59);
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
@@ -185,7 +208,7 @@ export default async function EditEventPage({
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Promoter dashboard
+          Promoter Dashboard
         </Link>
 
         <div className="mt-6 flex flex-wrap items-start justify-between gap-4 border-b border-[#1E3A5F]/10 pb-8">
@@ -220,7 +243,7 @@ export default async function EditEventPage({
               href={`/promoter/events/${id}/kiosk`}
               className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#E87722]/90"
             >
-              Race day kiosk
+              Race Day Kiosk
             </Link>
             <Link
               href={`/promoter/events/${id}/roster`}
@@ -238,7 +261,7 @@ export default async function EditEventPage({
               href={`/promoter/events/${id}/results`}
               className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
             >
-              Results console
+              Results Console
             </Link>
           </div>
         </div>
@@ -265,7 +288,12 @@ export default async function EditEventPage({
                     const cutoff = (row as { pr_cutoff?: string | null }).pr_cutoff;
                     return (
                       <li key={row.id} className="text-sm leading-snug">
-                        <span className="font-medium text-[#1E3A5F]">{row.label}</span>
+                        <span className="font-medium text-[#1E3A5F]">
+                          {formatDistanceDisplay({
+                            label: row.label,
+                            race_name: (row as { race_name?: string | null }).race_name,
+                          })}
+                        </span>
                         <span className="text-[#1E3A5F]/80">
                           {" "}
                           — Gun {formatDateTimeLocal(gun ?? null)}
@@ -306,6 +334,25 @@ export default async function EditEventPage({
           artworkUrl={(event as { artwork_url?: string | null }).artwork_url ?? null}
         />
 
+        <section className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm sm:p-8">
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Venue & Directions</h2>
+          <p className="mt-1 text-sm text-[#1E3A5F]/70">
+            Set the start/finish location. Racers and followers get a map pin and a one-tap
+            &ldquo;Get directions&rdquo; link on the public event page.
+          </p>
+          <div className="mt-5">
+            <VenuePickerLazy
+              eventId={event.id}
+              initial={{
+                name: (event as { venue_name?: string | null }).venue_name ?? "",
+                address: (event as { venue_address?: string | null }).venue_address ?? "",
+                lat: (event as { venue_lat?: number | null }).venue_lat ?? null,
+                lng: (event as { venue_lng?: number | null }).venue_lng ?? null,
+              }}
+            />
+          </div>
+        </section>
+
         <section className="mt-10">
           <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Add Distance</h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/70">
@@ -316,10 +363,25 @@ export default async function EditEventPage({
           <div className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm sm:p-8">
             <form action={addDistance} className="space-y-5">
               <div>
-                <label htmlFor="label" className="text-sm font-medium text-[#1E3A5F]">
-                  Label
+                <label htmlFor="race_name" className="text-sm font-medium text-[#1E3A5F]">
+                  Individual race name{" "}
+                  <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
                 </label>
-                <input id="label" name="label" required className={inputClass} placeholder="5K" />
+                <input
+                  id="race_name"
+                  name="race_name"
+                  className={inputClass}
+                  placeholder="Kids Run"
+                />
+                <p className="mt-1 text-xs text-[#1E3A5F]/55">
+                  Use when this event has multiple named races (e.g. Kids Run, 5K, Half Marathon).
+                </p>
+              </div>
+              <div>
+                <label htmlFor="label" className="text-sm font-medium text-[#1E3A5F]">
+                  Race distance
+                </label>
+                <input id="label" name="label" required className={inputClass} placeholder="1 mile" />
               </div>
               <div>
                 <label htmlFor="entry_fee_dollars" className="text-sm font-medium text-[#1E3A5F]">
@@ -335,11 +397,18 @@ export default async function EditEventPage({
                   className={inputClass}
                 />
               </div>
+              <DistanceTierCheckboxes />
               <div>
                 <label htmlFor="gun_time" className="text-sm font-medium text-[#1E3A5F]">
                   Gun time <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
                 </label>
-                <input id="gun_time" name="gun_time" type="datetime-local" className={inputClass} />
+                <input
+                  id="gun_time"
+                  name="gun_time"
+                  type="datetime-local"
+                  defaultValue={defaultGunTime}
+                  className={inputClass}
+                />
               </div>
               <div>
                 <label htmlFor="pr_cutoff" className="text-sm font-medium text-[#1E3A5F]">
@@ -349,6 +418,7 @@ export default async function EditEventPage({
                   id="pr_cutoff"
                   name="pr_cutoff"
                   type="datetime-local"
+                  defaultValue={defaultEntryDeadline}
                   className={inputClass}
                 />
               </div>
@@ -359,20 +429,25 @@ export default async function EditEventPage({
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-[#1E3A5F]/70">
                   You may have only one Qualifier per event. Runners can enter the Qualifier and
-                  optionally roll their split to other races you allow below.
+                  optionally Carry-Over their split to other races you allow below.
                 </p>
                 {qualifierDistance ? (
                   <div className="mt-4 space-y-4">
                     <p className="text-sm text-[#1E3A5F]">
                       This event&apos;s Peer Racing Qualifier is{" "}
-                      <strong className="font-semibold">{qualifierDistance.label}</strong>.
+                      <strong className="font-semibold">
+                        {formatDistanceDisplay({
+                          label: qualifierDistance.label,
+                          race_name: (qualifierDistance as { race_name?: string | null }).race_name,
+                        })}
+                      </strong>.
                     </p>
                     <div>
                       <label
                         htmlFor="allow_qualifier_split_to_roll_over_here"
                         className="text-sm font-medium text-[#1E3A5F]"
                       >
-                        Allow Qualifier split to roll over to this race?
+                        Allow Carry-Over from the Qualifier into this race?
                       </label>
                       <select
                         id="allow_qualifier_split_to_roll_over_here"
@@ -401,7 +476,7 @@ export default async function EditEventPage({
                         htmlFor="allow_roll_over_from_qualifier"
                         className="text-sm font-medium text-[#1E3A5F]"
                       >
-                        Allow roll-over splits from this Qualifier?
+                        Allow Carry-Over splits from this Qualifier?
                       </label>
                       <select
                         id="allow_roll_over_from_qualifier"
@@ -460,8 +535,8 @@ export default async function EditEventPage({
         <section className="mt-12">
           <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Distances</h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            You may have one Peer Racing Qualifier Race but multiple “carry over” distances within.
-            Runners may run the Qualifier race and enter the shorter distances and carryover their
+            You may have one Peer Racing Qualifier Race but multiple Carry-Over distances within.
+            Runners may run the Qualifier race and enter the shorter distances and Carry-Over their
             times on those specific distance splits.
           </p>
 
@@ -475,7 +550,10 @@ export default async function EditEventPage({
                 >
                   <div>
                     <p className="font-display text-lg font-semibold text-[#1E3A5F]">
-                      {distance.label}
+                      {formatDistanceDisplay({
+                        label: distance.label,
+                        race_name: (distance as { race_name?: string | null }).race_name,
+                      })}
                     </p>
                     {gun ? (
                       <p className="mt-1 text-sm text-[#1E3A5F]/70">
@@ -545,6 +623,13 @@ export default async function EditEventPage({
             </button>
           </form>
         </section>
+
+        <DeleteEventSection
+          eventId={event.id}
+          eventName={event.name}
+          entryCount={entryCount ?? 0}
+          publishedDistanceCount={publishedDistanceCount ?? 0}
+        />
       </main>
     </div>
   );

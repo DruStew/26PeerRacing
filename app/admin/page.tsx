@@ -1,8 +1,10 @@
 import Link from "next/link";
 
+import { requireAdmin } from "@/lib/admin/require-admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export default async function AdminDashboardPage() {
+  const { admin } = await requireAdmin("/admin");
   const supabase = await createServerSupabaseClient();
 
   const [{ count: eventCount }, { count: entryCount }, { count: memberCount }] = await Promise.all([
@@ -40,7 +42,20 @@ export default async function AdminDashboardPage() {
       <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
         Admin Dashboard
       </h1>
-      <p className="mt-3 max-w-2xl text-pretty text-[#1E3A5F]/75">
+      <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#1E3A5F]/75">
+        <span>
+          Signed in as{" "}
+          <strong className="font-medium text-[#1E3A5F]">{admin.email ?? admin.userId}</strong>
+        </span>
+        <span
+          className={`rounded-md px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${
+            admin.isSuperAdmin ? "bg-[#E87722]/15 text-[#E87722]" : "bg-[#1E3A5F]/10 text-[#1E3A5F]/80"
+          }`}
+        >
+          {admin.isSuperAdmin ? "Super Admin" : "Admin"}
+        </span>
+      </p>
+      <p className="mt-2 max-w-2xl text-pretty text-[#1E3A5F]/75">
         Company-wide overview. Open events to review race info and entrants, search members to
         manage roles, and use communications when messaging is wired up.
       </p>
@@ -76,15 +91,27 @@ export default async function AdminDashboardPage() {
           </li>
           <li>
             <Link href="/admin/bulk-import" className="font-medium text-[#E87722] hover:underline">
-              Bulk import CSV
+              Bulk Import CSV
             </Link>
             <span className="text-[#1E3A5F]/60"> — batch entries for any event (batched DB writes)</span>
           </li>
           <li>
-            <Link href="/admin/members" className="font-medium text-[#E87722] hover:underline">
-              Members & roles
+            <Link href="/admin/finance" className="font-medium text-[#E87722] hover:underline">
+              Financial overview
             </Link>
-            <span className="text-[#1E3A5F]/60"> — search profiles, assign admin / promoter / check-in</span>
+            <span className="text-[#1E3A5F]/60"> — checks paid, runner payouts, promoter earnings (restricted)</span>
+          </li>
+          <li>
+            <Link href="/admin/memberships" className="font-medium text-[#E87722] hover:underline">
+              Membership Tiers
+            </Link>
+            <span className="text-[#1E3A5F]/60"> — prices, Stripe IDs, tier names</span>
+          </li>
+          <li>
+            <Link href="/admin/members" className="font-medium text-[#E87722] hover:underline">
+              Members & Roles
+            </Link>
+            <span className="text-[#1E3A5F]/60"> — search profiles, assign roles and membership level</span>
           </li>
           <li>
             <Link href="/admin/comms" className="font-medium text-[#E87722] hover:underline">

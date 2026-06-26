@@ -16,7 +16,7 @@ export default function AdminCommsPage() {
       </p>
 
       <div className="mt-10 rounded-xl border border-dashed border-[#1E3A5F]/25 bg-[#fafbfc] p-8 text-center">
-        <p className="font-display text-lg font-semibold text-[#1E3A5F]">Coming soon</p>
+        <p className="font-display text-lg font-semibold text-[#1E3A5F]">Coming Soon</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-[#1E3A5F]/70">
           You&apos;ll choose a channel, pick recipients from search or filters, preview a template,
           and review a send log — all from here.

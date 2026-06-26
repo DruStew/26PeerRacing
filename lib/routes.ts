@@ -7,6 +7,12 @@ export const DEFAULT_PUBLIC_ROUTE = "/events";
 /** Signed-in runners: registrations and withdrawals (while open). */
 export const MY_ENTRIES_ROUTE = "/my-entries";
 
+/** Signed-in runners: published race results + trophy case (badges earned). */
+export const MY_RESULTS_ROUTE = "/my-results";
+
+/** Public index of races with published official results. */
+export const RACE_RESULTS_ROUTE = "/results";
+
 /** Peer Racing wallet (credits, payouts, future bank transfer). */
 export const WALLET_ROUTE = "/wallet";
 
