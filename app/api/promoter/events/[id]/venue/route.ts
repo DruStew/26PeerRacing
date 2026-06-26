@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { normalizeRaceDayLinks, parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
@@ -47,6 +48,8 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     venue_address?: string | null;
     venue_lat?: number | null;
     venue_lng?: number | null;
+    race_day_notes?: string | null;
+    race_day_links?: unknown;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -63,6 +66,8 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ ok: false, error: "Longitude out of range." }, { status: 400 });
   }
 
+  const raceDayLinks = normalizeRaceDayLinks(parseRaceDayLinksJson(body.race_day_links));
+
   const { error } = await service
     .from("events")
     .update({
@@ -70,6 +75,8 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
       venue_address: body.venue_address?.trim() || null,
       venue_lat: lat,
       venue_lng: lng,
+      race_day_notes: body.race_day_notes?.trim() || null,
+      race_day_links: raceDayLinks,
     })
     .eq("id", eventId);
 

@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
-    "dev:turbo": "next dev",
+    "dev": "next dev --webpack --hostname 0.0.0.0",
+    "dev:firewall": "powershell -ExecutionPolicy Bypass -File scripts/allow-dev-lan-firewall.ps1",
+    "dev:turbo": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

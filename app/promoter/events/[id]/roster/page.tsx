@@ -7,7 +7,7 @@ import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
-import { RosterSearchClient } from "./RosterSearchClient";
+import { PromoterRosterClient } from "./PromoterRosterClient";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +36,8 @@ type ProfileRow = {
 
 type RunnerGroup = {
   key: string;
+  userId: string | null;
+  entryId: string;
   name: string;
   email: string;
   phone: string;
@@ -111,6 +113,8 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
       .sort((a, b) => a.label.localeCompare(b.label));
     return {
       key,
+      userId: list[0].user_id ?? null,
+      entryId: list[0].id,
       name,
       email: prof?.email ?? list[0].email ?? "",
       phone: prof?.phone ?? "",
@@ -157,19 +161,22 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
         <div className="mt-6 border-b border-[#1E3A5F]/10 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race day</p>
           <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
-            Check-in roster
+            Check-In Roster
           </h1>
           <p className="mt-2 text-sm text-[#1E3A5F]/75">{(event as { name: string }).name}</p>
-          <p className="mt-1 text-xs text-[#1E3A5F]/55">Live snapshot — refresh the page for the latest counts.</p>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#1E3A5F]/70">
+            Live snapshot of who&apos;s registered and checked in. Refresh the page or close a runner panel for the
+            latest counts.
+          </p>
         </div>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-[#1E3A5F]/10 bg-white p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">Runners registered</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">Runners Registered</p>
             <p className="font-display mt-1 text-3xl font-bold text-[#1E3A5F]">{runners.length}</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/70">Checked in</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800/70">Checked In</p>
             <p className="font-display mt-1 text-3xl font-bold text-emerald-800">
               {checkedIn.length}
               {partial.length > 0 ? (
@@ -178,7 +185,7 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
             </p>
           </div>
           <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800/70">Not checked in</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800/70">Not Checked In</p>
             <p className="font-display mt-1 text-3xl font-bold text-amber-800">{notCheckedIn.length}</p>
           </div>
         </div>
@@ -192,7 +199,12 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
           ))}
         </div>
 
-        <RosterSearchClient notCheckedIn={notCheckedIn} partial={partial} checkedIn={checkedIn} />
+        <PromoterRosterClient
+          eventId={id}
+          notCheckedIn={notCheckedIn}
+          partial={partial}
+          checkedIn={checkedIn}
+        />
       </main>
     </div>
   );

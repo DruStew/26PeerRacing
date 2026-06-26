@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { authKioskForEvent } from "@/lib/kiosk/auth-kiosk-event";
+import { authKioskOrPromoterForEvent } from "@/lib/kiosk/auth-kiosk-or-promoter-event";
 import { filterEntriesForProfile } from "@/lib/kiosk/match-profile-entries";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   let userId = typeof body.userId === "string" ? body.userId.trim() : "";
   const entryId = typeof body.entryId === "string" ? body.entryId.trim() : "";
 
-  const auth = await authKioskForEvent(request, eventId);
+  const auth = await authKioskOrPromoterForEvent(request, eventId);
   if (!auth.ok) {
     return auth.response;
   }

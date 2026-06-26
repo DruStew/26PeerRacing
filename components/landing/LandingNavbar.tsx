@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   DEFAULT_PUBLIC_ROUTE,
-  KIOSK_ROUTE,
   MY_ENTRIES_ROUTE,
   MY_RESULTS_ROUTE,
   RACE_RESULTS_ROUTE,
@@ -21,9 +20,6 @@ const publicNav = [
 
 /** Public results index — shown to racers and visitors in place of "Host an Event". */
 const raceResultsLink = { name: "Race Results", href: RACE_RESULTS_ROUTE } as const;
-
-/** Race-day staff only (promoter/admin); hidden from runners and signed-out visitors. */
-const kioskLink = { name: "PR Kiosk", href: KIOSK_ROUTE } as const;
 
 const membershipLink = {
   name: "Membership",
@@ -151,7 +147,6 @@ export function LandingNavbar() {
   const navLinks = signedIn
     ? [
         publicNav[0],
-        ...(isRaceStaff ? [kioskLink] : []),
         publicNav[1],
         promoterNavLink,
         myEntriesLink,

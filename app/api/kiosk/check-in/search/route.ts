@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { authKioskForEvent } from "@/lib/kiosk/auth-kiosk-event";
+import { authKioskOrPromoterForEvent } from "@/lib/kiosk/auth-kiosk-or-promoter-event";
 import { countEntriesForKioskRow } from "@/lib/kiosk/match-profile-entries";
 import { searchProfilesForKiosk } from "@/lib/kiosk/search-profiles-for-kiosk";
 
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Missing eventId" }, { status: 400 });
   }
 
-  const auth = await authKioskForEvent(request, eventId);
+  const auth = await authKioskOrPromoterForEvent(request, eventId);
   if (!auth.ok) {
     return auth.response;
   }

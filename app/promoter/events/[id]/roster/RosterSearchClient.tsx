@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 
 export type RosterRunner = {
   key: string;
+  userId: string | null;
+  entryId: string;
   name: string;
   email: string;
   phone: string;
@@ -22,7 +24,15 @@ function matchesQuery(r: RosterRunner, q: string): boolean {
     .every((word) => hay.includes(word));
 }
 
-function RunnerTable({ rows, emptyText }: { rows: RosterRunner[]; emptyText: string }) {
+function RunnerTable({
+  rows,
+  emptyText,
+  onManage,
+}: {
+  rows: RosterRunner[];
+  emptyText: string;
+  onManage: (runner: RosterRunner) => void;
+}) {
   if (rows.length === 0) {
     return <p className="mt-3 text-sm text-[#1E3A5F]/60">{emptyText}</p>;
   }
@@ -37,6 +47,7 @@ function RunnerTable({ rows, emptyText }: { rows: RosterRunner[]; emptyText: str
             <th className="px-4 py-2.5">Races</th>
             <th className="px-4 py-2.5">Paid</th>
             <th className="px-4 py-2.5">Contact</th>
+            <th className="px-4 py-2.5">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -68,6 +79,15 @@ function RunnerTable({ rows, emptyText }: { rows: RosterRunner[]; emptyText: str
                 <span className="block">{r.email || "—"}</span>
                 {r.phone ? <span className="block text-xs">{r.phone}</span> : null}
               </td>
+              <td className="px-4 py-2.5">
+                <button
+                  type="button"
+                  onClick={() => onManage(r)}
+                  className="rounded-md bg-[#E87722] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#E87722]/90"
+                >
+                  Manage
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -80,10 +100,12 @@ export function RosterSearchClient({
   notCheckedIn,
   partial,
   checkedIn,
+  onManage,
 }: {
   notCheckedIn: RosterRunner[];
   partial: RosterRunner[];
   checkedIn: RosterRunner[];
+  onManage: (runner: RosterRunner) => void;
 }) {
   const [q, setQ] = useState("");
   const query = q.trim();
@@ -103,7 +125,7 @@ export function RosterSearchClient({
     <>
       <div className="mt-8">
         <label className="block max-w-md">
-          <span className="text-sm font-medium text-[#1E3A5F]">Roster search</span>
+          <span className="text-sm font-medium text-[#1E3A5F]">Roster Search</span>
           <input
             type="search"
             value={q}
@@ -129,7 +151,7 @@ export function RosterSearchClient({
       </div>
 
       <section className="mt-10">
-        <h2 className="font-display text-xl font-bold text-[#1E3A5F]">
+        <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
           Paid, Not Checked In{" "}
           <span className="font-sans text-base font-semibold text-[#1E3A5F]/55">
             ({query ? `${fNot.length} of ${notCheckedIn.length}` : notCheckedIn.length})
@@ -141,30 +163,35 @@ export function RosterSearchClient({
         <RunnerTable
           rows={fNot}
           emptyText={query ? "No matches in this group." : "Everyone who registered has checked in."}
+          onManage={onManage}
         />
       </section>
 
       {partial.length > 0 ? (
         <section className="mt-10">
-          <h2 className="font-display text-xl font-bold text-[#1E3A5F]">
+          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
             Partially Checked In{" "}
             <span className="font-sans text-base font-semibold text-[#1E3A5F]/55">
               ({query ? `${fPartial.length} of ${partial.length}` : partial.length})
             </span>
           </h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/65">Checked in for some of their races but not all.</p>
-          <RunnerTable rows={fPartial} emptyText="No matches in this group." />
+          <RunnerTable rows={fPartial} emptyText="No matches in this group." onManage={onManage} />
         </section>
       ) : null}
 
       <section className="mt-10">
-        <h2 className="font-display text-xl font-bold text-[#1E3A5F]">
+        <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
           Checked In{" "}
           <span className="font-sans text-base font-semibold text-[#1E3A5F]/55">
             ({query ? `${fChecked.length} of ${checkedIn.length}` : checkedIn.length})
           </span>
         </h2>
-        <RunnerTable rows={fChecked} emptyText={query ? "No matches in this group." : "No one has checked in yet."} />
+        <RunnerTable
+          rows={fChecked}
+          emptyText={query ? "No matches in this group." : "No one has checked in yet."}
+          onManage={onManage}
+        />
       </section>
     </>
   );

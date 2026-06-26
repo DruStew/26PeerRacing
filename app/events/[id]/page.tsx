@@ -4,10 +4,10 @@ import { notFound } from "next/navigation";
 
 import { FlyerLightbox } from "@/components/events/FlyerLightbox";
 import { EventEnterButton } from "@/components/events/EventEnterButton";
+import { EventVenueDirections } from "@/components/events/EventVenueDirections";
 import { ShareRaceButton } from "@/components/events/ShareRaceButton";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { CourseMapLazy } from "@/components/maps/CourseMapLazy";
-import { DirectionsButton } from "@/components/maps/DirectionsButton";
 import {
   courseLengthMeters,
   metersToKm,
@@ -20,7 +20,10 @@ import { buildEventShareText, eventPageMetadata } from "@/lib/event-share";
 import { distanceTierRequirementLabel } from "@/lib/membership-tiers";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
+import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
@@ -97,7 +100,7 @@ export default async function EventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng",
+      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links",
     )
     .eq("id", id)
     .single();
@@ -129,7 +132,11 @@ export default async function EventPage({
   const venueLng = (event as { venue_lng?: number | null }).venue_lng ?? null;
   const venueName = (event as { venue_name?: string | null }).venue_name ?? null;
   const venueAddress = (event as { venue_address?: string | null }).venue_address ?? null;
-  const hasVenue = venueLat != null && venueLng != null;
+  const raceDayNotes = (event as { race_day_notes?: string | null }).race_day_notes ?? null;
+  const raceDayLinks = parseRaceDayLinksJson(
+    (event as { race_day_links?: unknown }).race_day_links,
+  );
+  const hasVenuePin = venueLat != null && venueLng != null;
 
   const {
     data: { user },
@@ -259,31 +266,16 @@ export default async function EventPage({
           />
         </header>
 
-        {hasVenue ? (
-          <section className="mt-10">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-x-6">
-              <div>
-                <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
-                  Venue & Directions
-                </h2>
-                <p className="mt-1 text-sm text-[#1E3A5F]/70">
-                  {venueName || venueAddress || location}
-                </p>
-              </div>
-              <DirectionsButton
-                lat={venueLat as number}
-                lng={venueLng as number}
-                label={venueName ?? event.name}
-              />
-            </div>
-            <div className="mt-4">
-              <CourseMapLazy
-                venue={{ lat: venueLat as number, lng: venueLng as number, label: venueName ?? event.name }}
-                heightClass="h-72"
-              />
-            </div>
-          </section>
-        ) : null}
+        <EventVenueDirections
+          eventName={event.name}
+          fallbackLocation={location}
+          venueName={venueName}
+          venueAddress={venueAddress}
+          venueLat={venueLat}
+          venueLng={venueLng}
+          raceDayNotes={raceDayNotes}
+          raceDayLinks={raceDayLinks}
+        />
 
         {distanceRows.length > 0 ? (
           <section className="mt-10">
@@ -384,7 +376,7 @@ export default async function EventPage({
                         <CourseMapLazy
                           course={course}
                           venue={
-                            hasVenue
+                            hasVenuePin
                               ? { lat: venueLat as number, lng: venueLng as number, label: venueName ?? event.name }
                               : null
                           }

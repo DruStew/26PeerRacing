@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { EventVenueDirections } from "@/components/events/EventVenueDirections";
 import { PublicResultsView } from "@/components/results/PublicResultsView";
 import { CourseMapLazy } from "@/components/maps/CourseMapLazy";
 import { DirectionsButton } from "@/components/maps/DirectionsButton";
@@ -12,6 +13,7 @@ import {
   type CourseGeoJSON,
 } from "@/lib/mapbox/config";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
+import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { loadPublicResults } from "@/lib/results-public";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -34,7 +36,7 @@ export default async function PublicRaceResultsPage({
     supabase.from("distances").select("course_geojson").eq("id", distanceId).maybeSingle(),
     supabase
       .from("events")
-      .select("venue_name,venue_lat,venue_lng")
+      .select("venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links")
       .eq("id", id)
       .maybeSingle(),
   ]);
@@ -48,7 +50,12 @@ export default async function PublicRaceResultsPage({
   const venueLat = (eventRow as { venue_lat?: number | null } | null)?.venue_lat ?? null;
   const venueLng = (eventRow as { venue_lng?: number | null } | null)?.venue_lng ?? null;
   const venueName = (eventRow as { venue_name?: string | null } | null)?.venue_name ?? null;
-  const hasVenue = venueLat != null && venueLng != null;
+  const venueAddress = (eventRow as { venue_address?: string | null } | null)?.venue_address ?? null;
+  const raceDayNotes = (eventRow as { race_day_notes?: string | null } | null)?.race_day_notes ?? null;
+  const raceDayLinks = parseRaceDayLinksJson(
+    (eventRow as { race_day_links?: unknown } | null)?.race_day_links,
+  );
+  const hasVenuePin = venueLat != null && venueLng != null;
 
   return (
     <div className="min-h-screen bg-[#fafbfc] font-sans text-[#1E3A5F]">
@@ -86,6 +93,19 @@ export default async function PublicRaceResultsPage({
           </p>
         </header>
 
+        <EventVenueDirections
+          eventName={results.eventName}
+          fallbackLocation={location || null}
+          venueName={venueName}
+          venueAddress={venueAddress}
+          venueLat={venueLat}
+          venueLng={venueLng}
+          raceDayNotes={raceDayNotes}
+          raceDayLinks={raceDayLinks}
+          className="mt-8"
+          showMap={!(hasCourse && hasVenuePin)}
+        />
+
         {hasCourse ? (
           <section className="mt-8">
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -95,7 +115,7 @@ export default async function PublicRaceResultsPage({
                   {metersToMiles(courseMeters).toFixed(2)} mi ({metersToKm(courseMeters).toFixed(2)} km)
                 </p>
               </div>
-              {hasVenue ? (
+              {hasVenuePin ? (
                 <DirectionsButton
                   lat={venueLat as number}
                   lng={venueLng as number}
@@ -107,7 +127,7 @@ export default async function PublicRaceResultsPage({
               <CourseMapLazy
                 course={course}
                 venue={
-                  hasVenue
+                  hasVenuePin
                     ? { lat: venueLat as number, lng: venueLng as number, label: venueName ?? results.eventName }
                     : null
                 }

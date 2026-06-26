@@ -7,6 +7,8 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+import { resolveShareableBaseUrl, resolveShareableBaseUrls } from "@/lib/server/shareable-base-url";
+
 import { PromoterKioskClient } from "./PromoterKioskClient";
 
 export default async function PromoterKioskPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,7 +39,8 @@ export default async function PromoterKioskPage({ params }: { params: Promise<{ 
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "";
   const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  const baseUrl = host ? `${proto}://${host}` : "";
+  const baseUrl = resolveShareableBaseUrl(host, proto);
+  const baseUrls = resolveShareableBaseUrls(host, proto);
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
@@ -56,7 +59,7 @@ export default async function PromoterKioskPage({ params }: { params: Promise<{ 
         <h1 className="font-display mt-2 text-3xl font-bold text-[#1E3A5F]">Kiosk &amp; Terminals</h1>
         <p className="mt-2 text-sm text-[#1E3A5F]/75">{(event as { name: string }).name}</p>
 
-        <PromoterKioskClient eventId={id} baseUrl={baseUrl} />
+        <PromoterKioskClient eventId={id} baseUrl={baseUrl} baseUrls={baseUrls} />
       </main>
     </div>
   );

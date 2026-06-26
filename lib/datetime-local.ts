@@ -34,6 +34,10 @@ export function localNoonFromDateOnly(value: string | null | undefined): Date | 
 export function toDatetimeLocalInputValue(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
+  return formatDateToDatetimeLocal(d);
+}
+
+function formatDateToDatetimeLocal(d: Date): string {
   if (Number.isNaN(d.getTime())) return "";
   const y = d.getFullYear();
   const mo = String(d.getMonth() + 1).padStart(2, "0");
@@ -41,6 +45,39 @@ export function toDatetimeLocalInputValue(iso: string | null | undefined): strin
   const h = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${y}-${mo}-${day}T${h}:${min}`;
+}
+
+/** Entry deadline datetime-local value N minutes before a gun datetime-local value. */
+export function entryDeadlineDatetimeLocalFromGun(
+  gunDatetimeLocal: string,
+  minutesBefore = 30,
+): string {
+  const trimmed = gunDatetimeLocal.trim();
+  if (!trimmed) return "";
+  const d = new Date(trimmed);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setMinutes(d.getMinutes() - minutesBefore);
+  return formatDateToDatetimeLocal(d);
+}
+
+/** Existing entry deadline, or gun time minus N minutes when unset. */
+export function datetimeLocalInputValueOrEntryDeadlineFromGun(
+  prCutoffIso: string | null | undefined,
+  gunIso: string | null | undefined,
+  raceDate: string | null | undefined,
+  defaultGunHour = 8,
+  defaultGunMinute = 0,
+  minutesBefore = 30,
+): string {
+  const existingCutoff = toDatetimeLocalInputValue(prCutoffIso);
+  if (existingCutoff) return existingCutoff;
+
+  const gunLocal =
+    toDatetimeLocalInputValue(gunIso) ||
+    defaultDatetimeLocalFromRaceDay(raceDate, defaultGunHour, defaultGunMinute);
+  if (!gunLocal) return "";
+
+  return entryDeadlineDatetimeLocalFromGun(gunLocal, minutesBefore);
 }
 
 /**

@@ -136,7 +136,22 @@ function primaryEntryForCarryOver(entries: RunnerEntry[], carry: RunnerEntry): R
   return entries.find((x) => x.id === carry.source_entry_id);
 }
 
-export function CheckInRunnerClient({ eventId }: { eventId: string }) {
+export function CheckInRunnerClient({
+  eventId,
+  variant = "kiosk",
+  openUserId = null,
+  openEntryId = null,
+  onRunnerClosed,
+  onRosterRefresh,
+}: {
+  eventId: string;
+  variant?: "kiosk" | "promoter";
+  openUserId?: string | null;
+  openEntryId?: string | null;
+  onRunnerClosed?: () => void;
+  /** Promoter roster: refresh server snapshot after check-in / entry changes. */
+  onRosterRefresh?: () => void;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -201,6 +216,10 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
 
   /** Monotonic counter so stale (out-of-order) live-search responses never overwrite newer ones. */
   const searchSeqRef = useRef(0);
+
+  const notifyRosterRefresh = useCallback(() => {
+    if (variant === "promoter") onRosterRefresh?.();
+  }, [variant, onRosterRefresh]);
 
   const search = useCallback(async () => {
     const seq = ++searchSeqRef.current;
@@ -313,6 +332,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
   );
 
   useEffect(() => {
+    if (variant === "promoter") return;
     const checkout = searchParams.get("checkout");
     const sessionId = searchParams.get("session_id");
     const kioskUser = searchParams.get("kiosk_user");
@@ -357,7 +377,16 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
       }
       router.replace(`/events/${eventId}/check-in`, { scroll: false });
     })();
-  }, [searchParams, eventId, selectedUserId, loadRunner, router]);
+  }, [searchParams, eventId, selectedUserId, loadRunner, router, variant]);
+
+  useEffect(() => {
+    if (!openUserId && !openEntryId) return;
+    setRunnerModalOpen(true);
+    void loadRunner({
+      userId: openUserId ?? undefined,
+      entryId: openEntryId ?? undefined,
+    });
+  }, [openUserId, openEntryId, loadRunner]);
 
   function pickSearchRow(row: SearchRow) {
     setRunnerModalOpen(true);
@@ -426,12 +455,15 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
     setSelectedGroupKey(null);
     setActiveEntryId(null);
     setKioskBibFallback(null);
-    setSearchRows(null);
     setWalkUpSuccessNotice(null);
-    setQ("");
     setError(null);
-    requestAnimationFrame(() => searchInputRef.current?.focus());
-  }, []);
+    if (variant === "kiosk") {
+      setSearchRows(null);
+      setQ("");
+      requestAnimationFrame(() => searchInputRef.current?.focus());
+    }
+    onRunnerClosed?.();
+  }, [variant, onRunnerClosed]);
 
   const dismissWalkUpSuccess = useCallback(() => {
     setWalkUpSuccessNotice(null);
@@ -524,6 +556,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
         });
       }
       if (selectedUserId) await loadRunner({ userId: selectedUserId, quietRefresh: true });
+      notifyRosterRefresh();
     } catch {
       setError("Network error");
     } finally {
@@ -569,6 +602,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
         });
       }
       if (selectedUserId) await loadRunner({ userId: selectedUserId, quietRefresh: true });
+      notifyRosterRefresh();
     } catch {
       setError("Network error");
     } finally {
@@ -595,6 +629,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
       }
       setActiveEntryId(null);
       if (selectedUserId) await loadRunner({ userId: selectedUserId });
+      notifyRosterRefresh();
     } catch {
       setError("Network error");
     } finally {
@@ -637,6 +672,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
         return;
       }
       if (selectedUserId) await loadRunner({ userId: selectedUserId });
+      notifyRosterRefresh();
     } catch {
       setError("Network error");
     } finally {
@@ -683,14 +719,18 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
   }, [runnerModalOpen, closeRunnerModal]);
 
   return (
-    <div className="relative mt-10 space-y-8 text-left">
+    <div className={`relative space-y-8 text-left ${variant === "kiosk" ? "mt-10" : ""}`}>
 
       <div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0 flex-1">
-            <label className="block text-sm font-medium text-[#1E3A5F]">Find runner</label>
+            <label className="block text-sm font-medium text-[#1E3A5F]">
+              {variant === "promoter" ? "Find runner" : "Find runner"}
+            </label>
             <p className="mt-1 text-xs text-[#1E3A5F]/60">
-              PR ID, name, email, or phone — searches all members and this event&apos;s entrants.
+              {variant === "promoter"
+                ? "Search all members and entrants — add races, check in, or withdraw entries."
+                : "PR ID, name, email, or phone — searches all members and this event's entrants."}
             </p>
           </div>
           <button
@@ -791,7 +831,7 @@ export function CheckInRunnerClient({ eventId }: { eventId: string }) {
           <div className="flex h-[100dvh] w-full max-w-2xl flex-col bg-white shadow-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl sm:border sm:border-[#1E3A5F]/10">
             <div className="shrink-0 border-b border-[#1E3A5F]/10 px-4 py-3 sm:rounded-t-2xl">
               <p id="kiosk-runner-modal-title" className="text-xs font-semibold tracking-[0.2em] text-[#1E3A5F]/55">
-                Runner Check-In
+                {variant === "promoter" ? "Manage Runner" : "Runner Check-In"}
               </p>
               <p className="mt-1 truncate text-lg font-semibold text-[#1E3A5F]">
                 {runner

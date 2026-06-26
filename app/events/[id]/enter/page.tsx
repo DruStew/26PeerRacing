@@ -3,7 +3,11 @@ import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { ShareRaceButton } from "@/components/events/ShareRaceButton";
+import { EventVenueDirections } from "@/components/events/EventVenueDirections";
+import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+export const dynamic = "force-dynamic";
 import { buildEventShareText } from "@/lib/event-share";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { isProfileComplete, type ProfileRow } from "@/lib/profile";
@@ -43,7 +47,7 @@ export default async function EnterEventPage({
 
   const { data: event, error } = await supabase
     .from("events")
-    .select("id,name,city,state,race_date")
+    .select("id,name,city,state,race_date,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links")
     .eq("id", id)
     .single();
 
@@ -179,6 +183,20 @@ export default async function EnterEventPage({
             Signed in as <span className="font-medium text-[#1E3A5F]">{phoneDisplay}</span>
           </p>
         </header>
+
+        <EventVenueDirections
+          eventName={event.name}
+          fallbackLocation={location}
+          venueName={(event as { venue_name?: string | null }).venue_name}
+          venueAddress={(event as { venue_address?: string | null }).venue_address}
+          venueLat={(event as { venue_lat?: number | null }).venue_lat}
+          venueLng={(event as { venue_lng?: number | null }).venue_lng}
+          raceDayNotes={(event as { race_day_notes?: string | null }).race_day_notes}
+          raceDayLinks={parseRaceDayLinksJson(
+            (event as { race_day_links?: unknown }).race_day_links,
+          )}
+          className="mt-8"
+        />
 
         {showCanceled ? (
           <div

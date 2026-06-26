@@ -2,6 +2,9 @@
 
 import dynamic from "next/dynamic";
 
+import type { RaceDayLink } from "@/lib/race-day-links";
+import type { VenueSearchBias } from "@/lib/mapbox/venue-search";
+
 const VenuePicker = dynamic(() => import("./VenuePicker").then((m) => m.VenuePicker), {
   ssr: false,
   loading: () => (
@@ -13,7 +16,15 @@ const VenuePicker = dynamic(() => import("./VenuePicker").then((m) => m.VenuePic
 
 export function VenuePickerLazy(props: {
   eventId: string;
-  initial: { name: string; address: string; lat: number | null; lng: number | null };
+  initial: {
+    name: string;
+    address: string;
+    lat: number | null;
+    lng: number | null;
+    raceDayNotes: string;
+    raceDayLinks?: RaceDayLink[] | unknown;
+  };
+  searchBias?: VenueSearchBias;
 }) {
   return <VenuePicker {...props} />;
 }

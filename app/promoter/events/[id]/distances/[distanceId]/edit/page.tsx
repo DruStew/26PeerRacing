@@ -5,9 +5,10 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
 import type { CourseGeoJSON } from "@/lib/mapbox/config";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
+import { GunEntryDeadlineFields } from "@/components/promoter/GunEntryDeadlineFields";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
-import { datetimeLocalInputValueOrRaceDayDefault } from "@/lib/datetime-local";
+import { datetimeLocalInputValueOrEntryDeadlineFromGun, datetimeLocalInputValueOrRaceDayDefault } from "@/lib/datetime-local";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const inputClass =
@@ -74,11 +75,13 @@ export default async function EditDistancePage({
     8,
     0,
   );
-  const entryDeadlineDefault = datetimeLocalInputValueOrRaceDayDefault(
+  const entryDeadlineDefault = datetimeLocalInputValueOrEntryDeadlineFromGun(
     distanceWithExtras.pr_cutoff ?? null,
+    distanceWithExtras.gun_time ?? null,
     raceDay,
-    23,
-    59,
+    8,
+    0,
+    30,
   );
   const isThisQualifier =
     (distance as { is_peer_racing_qualifier?: boolean }).is_peer_racing_qualifier === true;
@@ -234,31 +237,11 @@ export default async function EditDistancePage({
               />
             </div>
 
-            <div>
-              <label htmlFor="gun_time" className="text-sm font-medium text-[#1E3A5F]">
-                Gun time <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
-              </label>
-              <input
-                id="gun_time"
-                name="gun_time"
-                type="datetime-local"
-                defaultValue={gunTimeDefault}
-                className={inputClass}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="pr_cutoff" className="text-sm font-medium text-[#1E3A5F]">
-                Entry deadline <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
-              </label>
-              <input
-                id="pr_cutoff"
-                name="pr_cutoff"
-                type="datetime-local"
-                defaultValue={entryDeadlineDefault}
-                className={inputClass}
-              />
-            </div>
+            <GunEntryDeadlineFields
+              defaultGunTime={gunTimeDefault}
+              defaultEntryDeadline={entryDeadlineDefault}
+              inputClass={inputClass}
+            />
 
             <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
               <p className="font-display text-base font-semibold text-[#1E3A5F]">

@@ -5,6 +5,7 @@ import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import {
   defaultDatetimeLocalFromRaceDay,
+  entryDeadlineDatetimeLocalFromGun,
   formatDateTimeLocal,
 } from "@/lib/datetime-local";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
@@ -13,8 +14,10 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { EventScheduleForm } from "@/components/events/EventScheduleForm";
 import { DeleteEventSection } from "@/components/promoter/DeleteEventSection";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
+import { GunEntryDeadlineFields } from "@/components/promoter/GunEntryDeadlineFields";
 import { VenuePickerLazy } from "@/components/maps/VenuePickerLazy";
 import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
+import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { canManageEvent } from "@/lib/promoter/event-access";
 
 import { EventArtworkSection } from "./EventArtworkSection";
@@ -46,7 +49,7 @@ export default async function EditEventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,promoter_id",
+      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id",
     )
     .eq("id", id)
     .single();
@@ -194,7 +197,7 @@ export default async function EditEventPage({
   const published = event.status === "published";
   const raceDay = event.race_date as string | null;
   const defaultGunTime = defaultDatetimeLocalFromRaceDay(raceDay, 8, 0);
-  const defaultEntryDeadline = defaultDatetimeLocalFromRaceDay(raceDay, 23, 59);
+  const defaultEntryDeadline = entryDeadlineDatetimeLocalFromGun(defaultGunTime, 30);
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
@@ -249,7 +252,7 @@ export default async function EditEventPage({
               href={`/promoter/events/${id}/roster`}
               className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
             >
-              Check-in roster
+              Check-In Roster
             </Link>
             <Link
               href={`/promoter/events/${id}/payout`}
@@ -337,8 +340,8 @@ export default async function EditEventPage({
         <section className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm sm:p-8">
           <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Venue & Directions</h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            Set the start/finish location. Racers and followers get a map pin and a one-tap
-            &ldquo;Get directions&rdquo; link on the public event page.
+            Search for and pin your venue location with the map, then add the actual physical address and
+            start/finish descriptions below.
           </p>
           <div className="mt-5">
             <VenuePickerLazy
@@ -348,6 +351,22 @@ export default async function EditEventPage({
                 address: (event as { venue_address?: string | null }).venue_address ?? "",
                 lat: (event as { venue_lat?: number | null }).venue_lat ?? null,
                 lng: (event as { venue_lng?: number | null }).venue_lng ?? null,
+                raceDayNotes: (event as { race_day_notes?: string | null }).race_day_notes ?? "",
+                raceDayLinks: parseRaceDayLinksJson(
+                  (event as { race_day_links?: unknown }).race_day_links,
+                ),
+              }}
+              searchBias={{
+                city: event.city,
+                state: event.state,
+                proximity:
+                  (event as { venue_lng?: number | null }).venue_lng != null &&
+                  (event as { venue_lat?: number | null }).venue_lat != null
+                    ? {
+                        lng: (event as { venue_lng: number }).venue_lng,
+                        lat: (event as { venue_lat: number }).venue_lat,
+                      }
+                    : undefined,
               }}
             />
           </div>
@@ -398,30 +417,11 @@ export default async function EditEventPage({
                 />
               </div>
               <DistanceTierCheckboxes />
-              <div>
-                <label htmlFor="gun_time" className="text-sm font-medium text-[#1E3A5F]">
-                  Gun time <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
-                </label>
-                <input
-                  id="gun_time"
-                  name="gun_time"
-                  type="datetime-local"
-                  defaultValue={defaultGunTime}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label htmlFor="pr_cutoff" className="text-sm font-medium text-[#1E3A5F]">
-                  Entry deadline <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
-                </label>
-                <input
-                  id="pr_cutoff"
-                  name="pr_cutoff"
-                  type="datetime-local"
-                  defaultValue={defaultEntryDeadline}
-                  className={inputClass}
-                />
-              </div>
+              <GunEntryDeadlineFields
+                defaultGunTime={defaultGunTime}
+                defaultEntryDeadline={defaultEntryDeadline}
+                inputClass={inputClass}
+              />
 
               <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
                 <p className="font-display text-base font-semibold text-[#1E3A5F]">
