@@ -13,7 +13,11 @@ function tierFromSession(session: Stripe.Checkout.Session): MembershipTier | nul
 }
 
 function periodEndIso(sub: Stripe.Subscription): string {
-  return new Date(sub.current_period_end * 1000).toISOString();
+  const end = (sub as Stripe.Subscription & { current_period_end?: number }).current_period_end;
+  if (typeof end !== "number") {
+    return new Date().toISOString();
+  }
+  return new Date(end * 1000).toISOString();
 }
 
 async function cancelPriorSubscription(subscriptionId: string | null | undefined): Promise<void> {

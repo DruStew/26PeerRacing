@@ -12,7 +12,7 @@ import { buildEventShareText } from "@/lib/event-share";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { isProfileComplete, type ProfileRow } from "@/lib/profile";
 import { distanceTierRequirementLabel } from "@/lib/membership-tiers";
-import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
+import { isMembershipActive, membershipTierFromRow, requireActiveMembership, type MembershipRow } from "@/lib/membership";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { MY_ENTRIES_ROUTE, WALLET_ROUTE } from "@/lib/routes";
 import { sumWalletBalanceCents } from "@/lib/wallet/balance";

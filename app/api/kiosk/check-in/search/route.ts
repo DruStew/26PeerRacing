@@ -77,8 +77,8 @@ export async function POST(request: Request) {
   });
 
   const seenUserIds = new Set(
-    entryResults
-      .map((r) => r.user_id as string | null | undefined)
+    raw
+      .map((row) => row.user_id as string | null | undefined)
       .filter((id): id is string => Boolean(id)),
   );
 

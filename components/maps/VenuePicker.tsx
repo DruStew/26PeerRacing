@@ -157,7 +157,7 @@ export function VenuePicker({
   }, [query, searchBias, venue.lat, venue.lng]);
 
   function selectResult(r: GeoResult) {
-    setVenue({ name: r.name, address: r.address, lat: r.lat, lng: r.lng });
+    setVenue((v) => ({ ...v, name: r.name, address: r.address, lat: r.lat, lng: r.lng }));
     setResults([]);
     const map = mapRef.current;
     if (map) {

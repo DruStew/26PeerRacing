@@ -22,6 +22,9 @@ type DistanceRow = {
   is_peer_racing_qualifier?: boolean | null;
   allow_roll_over_from_qualifier?: boolean | null;
   allow_qualifier_split_to_roll_over_here?: boolean | null;
+  allow_free_tier?: boolean | null;
+  allow_pr_team_tier?: boolean | null;
+  allow_top_tier?: boolean | null;
 };
 
 function computeTotalCents(

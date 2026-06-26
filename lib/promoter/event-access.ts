@@ -36,12 +36,13 @@ export async function loadEventForPromoterTools(
 > {
   const { data: event, error } = await supabase.from("events").select(select).eq("id", eventId).single();
   if (error || !event) return { ok: false, reason: "not_found" };
-  const promoterId = (event as { promoter_id: string }).promoter_id;
+  const row = event as unknown as Record<string, unknown> & { id: string; promoter_id: string };
+  const promoterId = row.promoter_id;
   if (!(await canManageEvent(supabase, userId, promoterId))) {
     return { ok: false, reason: "forbidden" };
   }
   return {
     ok: true,
-    event: event as Record<string, unknown> & { id: string; promoter_id: string },
+    event: row,
   };
 }
