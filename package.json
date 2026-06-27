@@ -23,7 +23,8 @@
     "db:link": "supabase link",
     "db:push": "supabase db push",
     "db:list": "supabase migration list",
-    "db:new": "supabase migration new"
+    "db:new": "supabase migration new",
+    "setup:auth-email": "node --env-file=.env.local scripts/setup-resend-auth-email.mjs --push"
   },
   "dependencies": {
     "@mapbox/mapbox-gl-draw": "^1.5.1",

@@ -2,42 +2,32 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { sendPeerRacingMagicLink } from "@/lib/auth/send-magic-link-email";
+
 /**
- * Sends a Peer Racing magic-link email via GoTrue (same as /login signInWithOtp).
+ * Sends a Peer Racing magic-link email via Resend (not Supabase SMTP).
  */
 export async function sendPeerRacingMagicLinkEmail(args: {
   email: string;
   redirectTo: string;
+  origin: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!url || !serviceKey) {
-    return { ok: false, error: "Auth is not configured." };
+  let returnUrl = "/";
+  try {
+    const url = new URL(args.redirectTo);
+    const fromQuery = url.searchParams.get("returnUrl");
+    if (fromQuery?.startsWith("/") && !fromQuery.startsWith("//")) {
+      returnUrl = fromQuery;
+    }
+  } catch {
+    /* use default returnUrl */
   }
 
-  const res = await fetch(`${url.replace(/\/$/, "")}/auth/v1/otp`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
-    },
-    body: JSON.stringify({
-      email: args.email.trim().toLowerCase(),
-      create_user: false,
-      data: {},
-      gotrue_meta_security: {},
-      options: { emailRedirectTo: args.redirectTo },
-    }),
+  return sendPeerRacingMagicLink({
+    email: args.email,
+    origin: args.origin,
+    returnUrl,
   });
-
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { msg?: string; error_description?: string };
-    const msg = body.msg ?? body.error_description ?? `HTTP ${res.status}`;
-    return { ok: false, error: msg };
-  }
-
-  return { ok: true };
 }
 
 export function kioskMagicLinkRedirect(origin: string): string {

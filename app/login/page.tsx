@@ -5,31 +5,32 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
 
 function LoginForm() {
   const searchParams = useSearchParams();
   const returnUrl = searchParams.get("returnUrl") ?? DEFAULT_PUBLIC_ROUTE;
+  const authError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">(
+    authError ? "error" : "idle",
+  );
+  const [error, setError] = useState<string | null>(authError);
 
   const handleSendLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("loading");
     setError(null);
-    const supabase = createClient();
-    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-    const callbackUrl = `${baseUrl.replace(/\/$/, "")}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}`;
-    const { error: signError } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: callbackUrl },
+    const res = await fetch("/api/auth/magic-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), returnUrl }),
     });
-    if (signError) {
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok || !data.ok) {
       setStatus("error");
-      setError(signError.message);
+      setError(data.error ?? "Could not send sign-in link. Try again in a minute.");
       return;
     }
     setStatus("sent");
@@ -104,7 +105,7 @@ function LoginForm() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-lg border border-[#1E3A5F]/20 bg-white py-2.5 pl-11 pr-3 text-sm text-[#1E3A5F] placeholder:text-[#1E3A5F]/35 focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
+                    className="w-full rounded-lg border border-[#1E3A5F]/20 bg-white py-2.5 pl-11 pr-3 text-base text-[#1E3A5F] placeholder:text-[#1E3A5F]/35 focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
                     placeholder="you@example.com"
                   />
                 </div>

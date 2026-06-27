@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isMembershipActive, type MembershipRow } from "@/lib/membership";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
+import {
+  createAuthRouteHandlerSupabaseClient,
+  redirectWithAuthCookies,
+} from "@/lib/supabase/route-handler";
 
-export async function GET(request: Request) {
-  const url = new URL(request.url);
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl;
   const code = url.searchParams.get("code");
   const returnUrl = url.searchParams.get("returnUrl") ?? DEFAULT_PUBLIC_ROUTE;
 
@@ -15,7 +18,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
-  const supabase = await createServerSupabaseClient();
+  const pendingCookies: Parameters<typeof createAuthRouteHandlerSupabaseClient>[1] = [];
+  const supabase = createAuthRouteHandlerSupabaseClient(request, pendingCookies);
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error || !data.session) {
@@ -26,9 +30,6 @@ export async function GET(request: Request) {
 
   const redirectTo = returnUrl.startsWith("/") ? returnUrl : DEFAULT_PUBLIC_ROUTE;
 
-  // New-member onboarding: a fresh magic-link signup has no profile and no
-  // membership. Route them through profile completion -> membership purchase ->
-  // wherever they were headed, instead of dropping them on the events list.
   const userId = data.session.user.id;
   const [{ data: profile }, { data: membership }] = await Promise.all([
     supabase
@@ -60,7 +61,5 @@ export async function GET(request: Request) {
     next = `/profile/complete?returnUrl=${encodeURIComponent(next)}`;
   }
 
-  return NextResponse.redirect(new URL(next, url.origin), {
-    status: 303,
-  });
+  return redirectWithAuthCookies(new URL(next, url.origin), pendingCookies, { status: 303 });
 }

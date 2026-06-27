@@ -103,7 +103,7 @@ port = 54324
 # Uncomment to expose additional ports for testing user applications that send emails.
 # smtp_port = 54325
 # pop3_port = 54326
-# admin_email = "admin@email.com"
+# admin_email = "noreply@peerracing.com"
 # sender_name = "Admin"
 
 [storage]
@@ -151,11 +151,18 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://localhost:3000"
+site_url = "https://v0-26-peer-racing.vercel.app"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = []
+additional_redirect_urls = [
+  "http://localhost:3000/**",
+  "http://127.0.0.1:3000/**",
+  "https://v0-26-peer-racing.vercel.app/**",
+  "https://*-.vercel.app/**",
+  "https://peerracing.com/**",
+  "https://www.peerracing.com/**",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -235,7 +242,8 @@ host = "smtp.resend.com"
 port = 465
 user = "resend"
 pass = "env(RESEND_API_KEY)"
-admin_email = "onboarding@resend.dev"
+# Sender must use a verified domain in Resend (not onboarding@resend.dev — test-only, owner inbox only).
+admin_email = "noreply@peerracing.com"
 sender_name = "Peer Racing"
 
 # Uncomment to customize email template

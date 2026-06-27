@@ -163,6 +163,7 @@ export async function createOrUpdateWalkUpMember(
   const magic = await sendPeerRacingMagicLinkEmail({
     email: input.email,
     redirectTo: kioskMagicLinkRedirect(origin),
+    origin,
   });
 
   return {

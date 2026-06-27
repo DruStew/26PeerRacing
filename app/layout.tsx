@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter, Oswald } from "next/font/google";
 
 import "./globals.css";
@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   title: "Peer Racing | Community-powered racing",
   description:
     "Host races, enter events, and pace friends. Peer Racing helps promoters publish events and runners enter races.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

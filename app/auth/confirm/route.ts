@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isMembershipActive, type MembershipRow } from "@/lib/membership";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
+import {
+  createAuthRouteHandlerSupabaseClient,
+  redirectWithAuthCookies,
+} from "@/lib/supabase/route-handler";
 
 /**
  * Token-hash sign-in (verifyOtp) — used by admin-generated magic links (e.g. the
@@ -11,8 +14,8 @@ import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
  * this needs no browser-stored code verifier, so a link minted server-side works
  * in any (incognito) browser.
  */
-export async function GET(request: Request) {
-  const url = new URL(request.url);
+export async function GET(request: NextRequest) {
+  const url = request.nextUrl;
   const tokenHash = url.searchParams.get("token_hash");
   const type = (url.searchParams.get("type") ?? "magiclink") as EmailOtpType;
   const returnUrl = url.searchParams.get("returnUrl") ?? DEFAULT_PUBLIC_ROUTE;
@@ -23,7 +26,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
-  const supabase = await createServerSupabaseClient();
+  const pendingCookies: Parameters<typeof createAuthRouteHandlerSupabaseClient>[1] = [];
+  const supabase = createAuthRouteHandlerSupabaseClient(request, pendingCookies);
   const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
 
   if (error || !data.session) {
@@ -61,5 +65,5 @@ export async function GET(request: Request) {
     next = `/profile/complete?returnUrl=${encodeURIComponent(next)}`;
   }
 
-  return NextResponse.redirect(new URL(next, url.origin), { status: 303 });
+  return redirectWithAuthCookies(new URL(next, url.origin), pendingCookies, { status: 303 });
 }
