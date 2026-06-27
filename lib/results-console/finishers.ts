@@ -13,6 +13,8 @@ export interface FinisherRow extends FinisherInput {
   userId: string | null;
   prId: string | null;
   timeMs: number;
+  timeDisplay: string;
+  source: string | null;
 }
 
 function ageOn(dob: string | null, onDate: string | null): number {
@@ -34,7 +36,7 @@ export async function loadFinishersForDistance(
 ): Promise<{ finishers: FinisherRow[]; importedRowCount: number }> {
   const { data: rawRows } = await service
     .from("results_raw")
-    .select("id,matched_entry_id,match_status,row_json")
+    .select("id,matched_entry_id,match_status,row_json,imported_at,source_filename")
     .eq("event_id", eventId)
     .eq("distance_id", distanceId);
 
@@ -42,16 +44,35 @@ export async function loadFinishersForDistance(
     id: string;
     matched_entry_id: string | null;
     match_status: string;
-    row_json: { parsed?: { time_ms?: number | null } } | null;
+    row_json: { parsed?: { time_ms?: number | null; time_display?: string | null } } | null;
+    imported_at: string | null;
+    source_filename: string | null;
   }>;
 
-  const matched = allRows.filter(
+  const matchedRaw = allRows.filter(
     (r) =>
       r.match_status === "matched" &&
       r.matched_entry_id &&
       typeof r.row_json?.parsed?.time_ms === "number" &&
       (r.row_json.parsed.time_ms as number) > 0,
   );
+
+  /** One finisher per entry — if duplicates exist, keep the most recently imported row. */
+  const bestByEntry = new Map<string, (typeof matchedRaw)[number]>();
+  for (const r of matchedRaw) {
+    const entryId = r.matched_entry_id as string;
+    const prev = bestByEntry.get(entryId);
+    if (!prev) {
+      bestByEntry.set(entryId, r);
+      continue;
+    }
+    const prevAt = prev.imported_at ?? "";
+    const nextAt = r.imported_at ?? "";
+    if (nextAt > prevAt || (nextAt === prevAt && r.id > prev.id)) {
+      bestByEntry.set(entryId, r);
+    }
+  }
+  const matched = [...bestByEntry.values()];
 
   if (matched.length === 0) {
     return { finishers: [], importedRowCount: allRows.length };
@@ -108,12 +129,15 @@ export async function loadFinishersForDistance(
     if (!entry) continue;
     const profile = entry.user_id ? profileByUser.get(entry.user_id) : undefined;
     const timeMs = r.row_json!.parsed!.time_ms as number;
+    const timeDisplay = r.row_json?.parsed?.time_display?.trim() || null;
     const prId = profile?.pr_id?.trim() || null;
     finishers.push({
       entryId: entry.id,
       userId: entry.user_id,
       prId,
       timeMs,
+      timeDisplay: timeDisplay ?? String(timeMs),
+      source: r.source_filename ?? null,
       id: prId ?? entry.id,
       bib: entry.assigned_bib?.trim() || prId || entry.bib?.trim() || "",
       first: entry.first_name,

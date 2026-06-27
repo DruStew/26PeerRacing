@@ -1,14 +1,9 @@
 "use client";
 
 /**
- * Producer results console — runs the Peer Racing division algorithm on a field of
- * finishers, with "tweak the ends" percentile controls, division badges, and payout
- * amounts sourced from the producer's saved payout settings (lib/payout — money is
- * defined once, on the payout calculator).
- *
- * Runs on real finishers from the finish-time import when they exist; otherwise
- * falls back to a generated sample field for exploring. Publish recomputes the same
- * math server-side and writes results + badges.
+ * Producer results console — runs the Peer Racing division algorithm on matched
+ * finish times (CSV import or manual roster entry). Shows a live finisher list as
+ * soon as any times exist; divisions and publish unlock at MIN_FINISHERS.
  */
 
 import Link from "next/link";
@@ -22,6 +17,7 @@ import {
   type ConsoleComputation,
   type FinisherInput,
 } from "@/lib/results-console/compute";
+import { formatMs } from "@/lib/results-import/parse";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
 import { DivisionBadge, DIVISION_COLORS } from "@/components/results/DivisionBadge";
 
@@ -32,57 +28,9 @@ type RealFinisher = FinisherInput & {
   userId: string | null;
   prId: string | null;
   timeMs: number;
+  timeDisplay?: string;
+  source?: string | null;
 };
-
-type SampleRow = {
-  id: string;
-  bib: string;
-  first: string;
-  last: string;
-  age: number;
-  sex: "Male" | "Female";
-  timeS: number;
-  military: boolean;
-};
-
-function mulberry32(a: number) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const FIRST = ["Avery", "Blake", "Casey", "Drew", "Emery", "Finley", "Gray", "Harper", "Indy", "Jordan", "Kai", "Logan", "Morgan", "Nico", "Oakley", "Parker", "Quinn", "Riley", "Sage", "Taylor"];
-const LAST = ["Adams", "Brooks", "Carter", "Diaz", "Ellis", "Foster", "Garcia", "Hayes", "Irwin", "James", "Kelly", "Lopez", "Mason", "Nguyen", "Ortiz", "Price", "Reed", "Smith", "Torres", "Walsh"];
-
-function generateSampleRows(count: number, seed: number): SampleRow[] {
-  const rand = mulberry32(seed);
-  const randNormal = () => {
-    const u = Math.max(rand(), 1e-12);
-    const v = rand();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  };
-  const rows: SampleRow[] = [];
-  for (let i = 0; i < count; i++) {
-    let hours = 2.2 * Math.exp(0.22 * randNormal());
-    if (i < Math.max(1, Math.round(count * 0.02))) hours = 1.15 + 0.06 * rand(); // elites
-    if (i >= count - Math.max(1, Math.round(count * 0.03))) hours = 5.0 + 1.0 * rand(); // walkers
-    rows.push({
-      id: `PR${String(i + 1).padStart(4, "0")}`,
-      bib: String(100 + i),
-      first: FIRST[Math.floor(rand() * FIRST.length)],
-      last: LAST[Math.floor(rand() * LAST.length)],
-      age: 16 + Math.floor(rand() * 62),
-      sex: rand() < 0.48 ? "Female" : "Male",
-      timeS: Math.max(3600, Math.round(hours * 3600)),
-      military: rand() < 0.15,
-    });
-  }
-  return rows;
-}
 
 function fmtUsd(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
@@ -112,8 +60,6 @@ export function ResultsConsoleClient({
   const [importedRowCount, setImportedRowCount] = useState(0);
   const [resultsPublishedAt, setResultsPublishedAt] = useState<string | null>(null);
 
-  const [sampleSize, setSampleSize] = useState(100);
-  const [seed, setSeed] = useState(42);
   const [minPercentile, setMinPercentile] = useState(5);
   const [maxPercentile, setMaxPercentile] = useState(95);
 
@@ -121,15 +67,17 @@ export function ResultsConsoleClient({
   const [publishNotice, setPublishNotice] = useState<string | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  const loadDistance = useCallback(async () => {
+  const loadDistance = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!selectedDistanceId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setLoadError(null);
-    setPublishNotice(null);
-    setPublishError(null);
+    if (!opts?.quiet) {
+      setLoading(true);
+      setLoadError(null);
+      setPublishNotice(null);
+      setPublishError(null);
+    }
     try {
       const [payoutRes, dataRes] = await Promise.all([
         fetch(`/api/promoter/events/${eventId}/payout?distanceId=${encodeURIComponent(selectedDistanceId)}`),
@@ -152,8 +100,6 @@ export function ResultsConsoleClient({
       setSettings(payoutJson.settings ?? null);
       setLiveFeeCents(payoutJson.suggestedFeeCents ?? 0);
       if (payoutJson.distance?.label) setSelectedLabel(payoutJson.distance.label);
-      const live = payoutJson.suggestedEntryCount ?? 0;
-      setSampleSize(live >= 10 ? live : 100);
 
       const dataJson = (await dataRes.json()) as {
         ok?: boolean;
@@ -172,9 +118,9 @@ export function ResultsConsoleClient({
       setRegisteredEntryCount(dataJson.registeredEntryCount ?? 0);
       setResultsPublishedAt(dataJson.resultsPublishedAt ?? null);
     } catch {
-      setLoadError("Network error");
+      if (!opts?.quiet) setLoadError("Network error");
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, [eventId, selectedDistanceId]);
 
@@ -182,47 +128,48 @@ export function ResultsConsoleClient({
     void loadDistance();
   }, [loadDistance]);
 
-  const realMode = realFinishers.length >= MIN_FINISHERS;
+  useEffect(() => {
+    const refresh = () => void loadDistance({ quiet: true });
+    const onVis = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const id = window.setInterval(refresh, 20_000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(id);
+    };
+  }, [loadDistance]);
 
-  const sampleRows = useMemo(
-    () => generateSampleRows(Math.max(0, Math.min(1000, sampleSize)), seed),
-    [sampleSize, seed],
-  );
+  const hasLiveTimes = realFinishers.length > 0;
+  const canRunAlgorithm = realFinishers.length >= MIN_FINISHERS;
 
-  const fieldRows = useMemo<FinisherInput[]>(
-    () => (realMode ? realFinishers : sampleRows),
-    [realMode, realFinishers, sampleRows],
-  );
-
-  // Map algorithm-entry id (prId ?? entryId) -> account user id, so the finisher
-  // list can deep-link into a racer's promoter-scoped history. Real mode only.
   const userIdByAlgoId = useMemo(() => {
     const m = new Map<string, string>();
-    if (!realMode) return m;
     for (const f of realFinishers) {
       if (f.userId) m.set(f.id, f.userId);
     }
     return m;
-  }, [realMode, realFinishers]);
+  }, [realFinishers]);
 
   const computation = useMemo<ConsoleComputation | { error: string } | null>(() => {
-    if (loading) return null;
+    if (loading || !canRunAlgorithm) return null;
     return computeConsoleResults({
-      rows: fieldRows,
+      rows: realFinishers,
       settings,
       distanceId: selectedDistanceId,
       liveFeeCents,
-      registeredEntryCount: realMode ? registeredEntryCount : null,
+      registeredEntryCount,
       minPercentile,
       maxPercentile,
     });
   }, [
     loading,
-    fieldRows,
+    realFinishers,
+    canRunAlgorithm,
     settings,
     selectedDistanceId,
     liveFeeCents,
-    realMode,
     registeredEntryCount,
     minPercentile,
     maxPercentile,
@@ -325,32 +272,64 @@ export function ResultsConsoleClient({
 
   return (
     <div className="space-y-8">
-      {realMode ? (
+      {hasLiveTimes ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-          <span className="font-semibold">Live data.</span> Running on {realFinishers.length} matched finishers from
-          the imported timing file
-          {importedRowCount > realFinishers.length
-            ? ` (${importedRowCount - realFinishers.length} imported rows are unmatched, ignored, or non-finishes)`
-            : ""}
-          .{" "}
-          <Link
-            href={`/promoter/events/${eventId}/results/import`}
-            className="font-semibold text-emerald-900 underline underline-offset-2"
-          >
-            Review the import
-          </Link>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <p>
+              <span className="font-semibold">Live finish times.</span> {realFinishers.length} matched finisher
+              {realFinishers.length === 1 ? "" : "s"} from roster entry and/or CSV import
+              {importedRowCount > realFinishers.length
+                ? ` (${importedRowCount - realFinishers.length} other imported rows are unmatched, ignored, or non-finishes)`
+                : ""}
+              . Updates automatically as times are added or changed — not published until you publish.
+              {!canRunAlgorithm ? (
+                <>
+                  {" "}
+                  Need at least {MIN_FINISHERS} finishers before divisions and publish unlock (
+                  {realFinishers.length}/{MIN_FINISHERS} so far).
+                </>
+              ) : null}
+            </p>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void loadDistance()}
+                className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-xs font-semibold text-emerald-900 hover:border-emerald-400"
+              >
+                Refresh
+              </button>
+              <Link
+                href={`/promoter/events/${eventId}/results/import`}
+                className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-xs font-semibold text-emerald-900 hover:border-emerald-400"
+              >
+                Import CSV
+              </Link>
+              <Link
+                href={`/promoter/events/${eventId}/roster`}
+                className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-xs font-semibold text-emerald-900 hover:border-emerald-400"
+              >
+                Roster times
+              </Link>
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <span className="font-semibold">Sample data preview.</span> No imported finish times for {selectedLabel}{" "}
-          yet — finishers below are generated so you can explore the console.{" "}
-          <Link
-            href={`/promoter/events/${eventId}/results/import`}
-            className="font-semibold text-amber-950 underline underline-offset-2"
-          >
-            Import finish times
-          </Link>{" "}
-          to run on real data.
+        <div className="rounded-xl border border-[#1E3A5F]/15 bg-white px-4 py-4 text-sm text-[#1E3A5F]/80">
+          <p className="font-semibold text-[#1E3A5F]">No finish times yet</p>
+          <p className="mt-1">
+            Enter times on the{" "}
+            <Link href={`/promoter/events/${eventId}/roster`} className="font-semibold text-[#E87722] underline-offset-2 hover:underline">
+              check-in roster
+            </Link>{" "}
+            or{" "}
+            <Link
+              href={`/promoter/events/${eventId}/results/import`}
+              className="font-semibold text-[#E87722] underline-offset-2 hover:underline"
+            >
+              import a timing CSV
+            </Link>
+            . Finishers appear here live as soon as a time is saved — before results are published.
+          </p>
         </div>
       )}
 
@@ -375,57 +354,45 @@ export function ResultsConsoleClient({
               ))}
             </select>
           </label>
-          {realMode ? (
+          {hasLiveTimes ? (
             <div className="block text-sm font-medium text-[#1E3A5F]">
               Matched finishers
               <p className={`${inputClass} bg-[#fafbfc] tabular-nums`}>{realFinishers.length}</p>
             </div>
           ) : (
-            <label className="block text-sm font-medium text-[#1E3A5F]">
-              Sample finishers
-              <input
-                type="number"
-                min={5}
-                max={1000}
-                className={`${inputClass} tabular-nums`}
-                value={sampleSize}
-                onChange={(e) => setSampleSize(Math.max(0, Number(e.target.value) || 0))}
-              />
-            </label>
+            <div className="block text-sm font-medium text-[#1E3A5F]">
+              Registered entries
+              <p className={`${inputClass} bg-[#fafbfc] tabular-nums`}>{registeredEntryCount}</p>
+            </div>
           )}
-          <label className="block text-sm font-medium text-[#1E3A5F]">
-            Slow-end cutoff (max percentile)
-            <input
-              type="number"
-              min={50}
-              max={100}
-              className={`${inputClass} tabular-nums`}
-              value={maxPercentile}
-              onChange={(e) => setMaxPercentile(Math.min(100, Math.max(50, Number(e.target.value) || 95)))}
-            />
-          </label>
-          <label className="block text-sm font-medium text-[#1E3A5F]">
-            Fast-end cutoff (min percentile)
-            <input
-              type="number"
-              min={0}
-              max={50}
-              className={`${inputClass} tabular-nums`}
-              value={minPercentile}
-              onChange={(e) => setMinPercentile(Math.min(50, Math.max(0, Number(e.target.value) || 0)))}
-            />
-          </label>
+          {canRunAlgorithm ? (
+            <>
+              <label className="block text-sm font-medium text-[#1E3A5F]">
+                Slow-end cutoff (max percentile)
+                <input
+                  type="number"
+                  min={50}
+                  max={100}
+                  className={`${inputClass} tabular-nums`}
+                  value={maxPercentile}
+                  onChange={(e) => setMaxPercentile(Math.min(100, Math.max(50, Number(e.target.value) || 95)))}
+                />
+              </label>
+              <label className="block text-sm font-medium text-[#1E3A5F]">
+                Fast-end cutoff (min percentile)
+                <input
+                  type="number"
+                  min={0}
+                  max={50}
+                  className={`${inputClass} tabular-nums`}
+                  value={minPercentile}
+                  onChange={(e) => setMinPercentile(Math.min(50, Math.max(0, Number(e.target.value) || 0)))}
+                />
+              </label>
+            </>
+          ) : null}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          {!realMode ? (
-            <button
-              type="button"
-              className="rounded-md border border-[#1E3A5F]/25 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] hover:text-[#E87722]"
-              onClick={() => setSeed(Math.floor(Math.random() * 1_000_000))}
-            >
-              Shuffle sample field
-            </button>
-          ) : null}
           {comp ? (
             <span className="text-xs text-[#1E3A5F]/70">
               Pre-algorithm outlier scan suggests cutoffs{" "}
@@ -465,9 +432,17 @@ export function ResultsConsoleClient({
         ) : null}
       </section>
 
-      {loading ? <p className="text-sm text-[#1E3A5F]/70">Loading payout settings…</p> : null}
+      {loading ? <p className="text-sm text-[#1E3A5F]/70">Loading finish times…</p> : null}
       {compError ? (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{compError}</p>
+      ) : null}
+
+      {hasLiveTimes && !canRunAlgorithm ? (
+        <LiveFinisherList
+          finishers={realFinishers}
+          raceLabel={selectedLabel}
+          eventId={eventId}
+        />
       ) : null}
 
       {comp ? (
@@ -625,9 +600,9 @@ export function ResultsConsoleClient({
                   Publish results — {selectedLabel}
                 </p>
                 <p className="mt-1 max-w-xl text-xs text-[#1E3A5F]/65">
-                  {realMode
-                    ? "Publishing recomputes divisions and payouts on the server from the imported finish times and your saved payout settings, writes the official results, and awards badges to each racer's trophy case."
-                    : "Publish unlocks once real finish times are imported for this distance — sample fields can't be published."}
+                  {canRunAlgorithm
+                    ? "Publishing recomputes divisions and payouts on the server from the live finish times and your saved payout settings, writes the official results, and awards badges to each racer's trophy case."
+                    : `Publish unlocks once at least ${MIN_FINISHERS} finishers have times for this distance.`}
                 </p>
                 {resultsPublishedAt ? (
                   <p className="mt-2 text-xs font-semibold text-emerald-800">
@@ -649,7 +624,7 @@ export function ResultsConsoleClient({
                 ) : null}
                 <button
                   type="button"
-                  disabled={!realMode || publishing}
+                  disabled={!canRunAlgorithm || publishing}
                   onClick={() => {
                     if (
                       window.confirm(
@@ -662,7 +637,7 @@ export function ResultsConsoleClient({
                     }
                   }}
                   className={`rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-colors ${
-                    realMode
+                    canRunAlgorithm
                       ? "bg-[#E87722] hover:bg-[#E87722]/90"
                       : "cursor-not-allowed bg-[#1E3A5F]/30"
                   } disabled:cursor-not-allowed disabled:opacity-60`}
@@ -685,6 +660,80 @@ export function ResultsConsoleClient({
         </>
       ) : null}
     </div>
+  );
+}
+
+function sourceLabel(source: string | null | undefined): string {
+  if (!source) return "—";
+  if (source === "manual:roster") return "Roster";
+  if (source.startsWith("manual:")) return "Manual";
+  return "CSV";
+}
+
+/** Live finisher table shown before enough runners exist to run divisions. */
+function LiveFinisherList({
+  finishers,
+  raceLabel,
+  eventId,
+}: {
+  finishers: RealFinisher[];
+  raceLabel: string;
+  eventId: string;
+}) {
+  return (
+    <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
+      <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Live Finishers — {raceLabel}</h2>
+      <p className="mt-1 text-xs text-[#1E3A5F]/65">
+        Provisional list — updates as times are entered on the roster or imported from timing. Divisions and payouts
+        appear once {MIN_FINISHERS} or more finishers have times.
+      </p>
+      <div className="mt-4 overflow-x-auto rounded-lg border border-[#1E3A5F]/10">
+        <table className="w-full text-sm">
+          <thead className="bg-[#fafbfc] text-left text-xs uppercase tracking-wide text-[#1E3A5F]/55">
+            <tr>
+              <th className="px-3 py-2 font-semibold">Place</th>
+              <th className="px-3 py-2 font-semibold">Bib</th>
+              <th className="px-3 py-2 font-semibold">PR ID</th>
+              <th className="px-3 py-2 font-semibold">Runner</th>
+              <th className="px-3 py-2 text-right font-semibold">Time</th>
+              <th className="px-3 py-2 font-semibold">Source</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#1E3A5F]/10">
+            {finishers.map((f, idx) => (
+              <tr key={f.entryId}>
+                <td className="px-3 py-2 tabular-nums font-semibold text-[#1E3A5F]">{idx + 1}</td>
+                <td className="px-3 py-2 font-mono text-xs text-[#1E3A5F]/80">{f.bib || "—"}</td>
+                <td className="px-3 py-2 font-mono text-xs text-[#1E3A5F]/80">{f.prId ?? "—"}</td>
+                <td className="px-3 py-2 text-[#1E3A5F]">
+                  {f.userId ? (
+                    <Link
+                      href={`/promoter/events/${eventId}/racer/${f.userId}`}
+                      className="font-medium underline-offset-2 hover:text-[#E87722] hover:underline"
+                    >
+                      {f.first} {f.last}
+                    </Link>
+                  ) : (
+                    <>
+                      {f.first} {f.last}
+                    </>
+                  )}
+                  <span className="ml-2 text-xs text-[#1E3A5F]/50">
+                    {f.sex === "Female" ? "F" : "M"}
+                    {f.military ? " · MIL" : ""}
+                    {f.age ? ` · ${f.age}` : ""}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-sm tabular-nums font-semibold text-[#1E3A5F]">
+                  {f.timeDisplay ?? formatMs(f.timeMs)}
+                </td>
+                <td className="px-3 py-2 text-xs text-[#1E3A5F]/65">{sourceLabel(f.source)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
