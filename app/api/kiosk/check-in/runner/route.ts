@@ -126,7 +126,7 @@ export async function POST(request: Request) {
   );
   const distById = new Map(distances.map((d) => [d.id, d]));
 
-  const entries = (entriesRaw ?? []).map((e) => {
+  const entriesMapped = (entriesRaw ?? []).map((e) => {
     const row = e as {
       id: string;
       distance_id: string;
@@ -146,6 +146,39 @@ export async function POST(request: Request) {
       distance_label: distById.get(row.distance_id)
         ? distanceLabel(distById.get(row.distance_id)!)
         : "Race",
+    };
+  });
+
+  const finishTimeByEntry = new Map<string, { ms: number; display: string }>();
+  const entryIds = entriesMapped.map((e) => e.id);
+  if (entryIds.length > 0) {
+    for (let i = 0; i < entryIds.length; i += 500) {
+      const chunk = entryIds.slice(i, i + 500);
+      const { data: rawRows } = await auth.admin
+        .from("results_raw")
+        .select("matched_entry_id,row_json,match_status")
+        .eq("event_id", eventId)
+        .in("matched_entry_id", chunk);
+      for (const r of (rawRows ?? []) as Array<{
+        matched_entry_id: string | null;
+        match_status: string;
+        row_json: { parsed?: { time_ms?: number | null; time_display?: string | null } } | null;
+      }>) {
+        if (r.match_status !== "matched" || !r.matched_entry_id) continue;
+        const ms = r.row_json?.parsed?.time_ms;
+        if (typeof ms !== "number" || ms <= 0) continue;
+        const display = r.row_json?.parsed?.time_display?.trim() || null;
+        finishTimeByEntry.set(r.matched_entry_id, { ms, display: display ?? String(ms) });
+      }
+    }
+  }
+
+  const entries = entriesMapped.map((e) => {
+    const ft = finishTimeByEntry.get(e.id);
+    return {
+      ...e,
+      finish_time_ms: ft?.ms ?? null,
+      finish_time_display: ft?.display ?? null,
     };
   });
 

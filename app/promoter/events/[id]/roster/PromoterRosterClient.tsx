@@ -25,6 +25,7 @@ export function PromoterRosterClient({ eventId, notCheckedIn, partial, checkedIn
       userId: runner.userId,
       entryId: runner.entryId,
     });
+    document.getElementById("runner-desk")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   const handleRunnerClosed = useCallback(() => {
@@ -34,7 +35,7 @@ export function PromoterRosterClient({ eventId, notCheckedIn, partial, checkedIn
 
   return (
     <>
-      <section className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm sm:p-8">
+      <section id="runner-desk" className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm sm:p-8">
         <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Runner Desk</h2>
         <p className="mt-1 text-sm text-[#1E3A5F]/70">
           Same tools as the race-day kiosk — search any member, add or withdraw entries, check in, and undo

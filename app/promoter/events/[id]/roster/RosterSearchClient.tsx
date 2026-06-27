@@ -24,7 +24,28 @@ function matchesQuery(r: RosterRunner, q: string): boolean {
     .every((word) => hay.includes(word));
 }
 
-function RunnerTable({
+function DistanceBadges({ distances, runnerKey }: { distances: RosterRunner["distances"]; runnerKey: string }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {distances.map((d, i) => (
+        <span
+          key={`${runnerKey}-${i}`}
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
+            d.checkedIn
+              ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+              : "bg-amber-50 text-amber-800 ring-amber-200"
+          }`}
+        >
+          {d.label}
+          {d.entryType === "roll_over" ? " (Carry-Over)" : ""}
+          {d.checkedIn ? " ✓" : ""}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RunnerCards({
   rows,
   emptyText,
   onManage,
@@ -37,7 +58,58 @@ function RunnerTable({
     return <p className="mt-3 text-sm text-[#1E3A5F]/60">{emptyText}</p>;
   }
   return (
-    <div className="mt-3 overflow-x-auto rounded-xl border border-[#1E3A5F]/10 bg-white">
+    <ul className="mt-3 space-y-2 md:hidden">
+      {rows.map((r) => (
+        <li key={r.key}>
+          <button
+            type="button"
+            onClick={() => onManage(r)}
+            className="flex w-full flex-col gap-2 rounded-xl border border-[#1E3A5F]/10 bg-white px-4 py-3.5 text-left shadow-sm transition-colors active:bg-[#fafbfc] hover:border-[#E87722]/35"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-[#1E3A5F]">{r.name}</p>
+                <p className="mt-0.5 text-xs text-[#1E3A5F]/60">
+                  PR ID{" "}
+                  <span className="font-mono font-semibold text-[#1E3A5F]">{r.prId ?? "—"}</span>
+                  {r.raceDayBib ? (
+                    <>
+                      {" "}
+                      · Bib <span className="font-mono font-semibold text-[#1E3A5F]">{r.raceDayBib}</span>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-md bg-[#E87722] px-2.5 py-1 text-[11px] font-semibold text-white">
+                Open
+              </span>
+            </div>
+            <DistanceBadges distances={r.distances} runnerKey={r.key} />
+            <p className="text-xs text-[#1E3A5F]/55">
+              {r.paid ? "Paid" : "Unpaid"}
+              {r.email ? ` · ${r.email}` : ""}
+            </p>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RunnerTable({
+  rows,
+  emptyText,
+  onManage,
+}: {
+  rows: RosterRunner[];
+  emptyText: string;
+  onManage: (runner: RosterRunner) => void;
+}) {
+  if (rows.length === 0) {
+    return <p className="mt-3 hidden text-sm text-[#1E3A5F]/60 md:block">{emptyText}</p>;
+  }
+  return (
+    <div className="mt-3 hidden overflow-x-auto rounded-xl border border-[#1E3A5F]/10 bg-white md:block">
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead>
           <tr className="border-b border-[#1E3A5F]/10 text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">
@@ -52,27 +124,24 @@ function RunnerTable({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.key} className="border-b border-[#1E3A5F]/5 last:border-b-0">
+            <tr
+              key={r.key}
+              role="button"
+              tabIndex={0}
+              onClick={() => onManage(r)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onManage(r);
+                }
+              }}
+              className="cursor-pointer border-b border-[#1E3A5F]/5 transition-colors last:border-b-0 hover:bg-[#fafbfc]"
+            >
               <td className="px-4 py-2.5 font-medium text-[#1E3A5F]">{r.name}</td>
               <td className="px-4 py-2.5 font-mono text-[#1E3A5F]">{r.prId ?? "—"}</td>
               <td className="px-4 py-2.5 font-mono text-[#1E3A5F]">{r.raceDayBib ?? "—"}</td>
               <td className="px-4 py-2.5">
-                <div className="flex flex-wrap gap-1.5">
-                  {r.distances.map((d, i) => (
-                    <span
-                      key={`${r.key}-${i}`}
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
-                        d.checkedIn
-                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
-                          : "bg-amber-50 text-amber-800 ring-amber-200"
-                      }`}
-                    >
-                      {d.label}
-                      {d.entryType === "roll_over" ? " (Carry-Over)" : ""}
-                      {d.checkedIn ? " ✓" : ""}
-                    </span>
-                  ))}
-                </div>
+                <DistanceBadges distances={r.distances} runnerKey={r.key} />
               </td>
               <td className="px-4 py-2.5">{r.paid ? "Paid" : "Unpaid"}</td>
               <td className="px-4 py-2.5 text-[#1E3A5F]/70">
@@ -82,7 +151,10 @@ function RunnerTable({
               <td className="px-4 py-2.5">
                 <button
                   type="button"
-                  onClick={() => onManage(r)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onManage(r);
+                  }}
                   className="rounded-md bg-[#E87722] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#E87722]/90"
                 >
                   Manage
@@ -93,6 +165,26 @@ function RunnerTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+function RunnerList({
+  rows,
+  emptyText,
+  onManage,
+}: {
+  rows: RosterRunner[];
+  emptyText: string;
+  onManage: (runner: RosterRunner) => void;
+}) {
+  if (rows.length === 0) {
+    return <p className="mt-3 text-sm text-[#1E3A5F]/60">{emptyText}</p>;
+  }
+  return (
+    <>
+      <RunnerCards rows={rows} emptyText={emptyText} onManage={onManage} />
+      <RunnerTable rows={rows} emptyText={emptyText} onManage={onManage} />
+    </>
   );
 }
 
@@ -158,9 +250,9 @@ export function RosterSearchClient({
           </span>
         </h2>
         <p className="mt-1 text-sm text-[#1E3A5F]/65">
-          Registered runners who haven&apos;t come through the kiosk yet — your race-morning chase list.
+          Registered runners who haven&apos;t come through the kiosk yet — tap a runner to check them in.
         </p>
-        <RunnerTable
+        <RunnerList
           rows={fNot}
           emptyText={query ? "No matches in this group." : "Everyone who registered has checked in."}
           onManage={onManage}
@@ -176,7 +268,7 @@ export function RosterSearchClient({
             </span>
           </h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/65">Checked in for some of their races but not all.</p>
-          <RunnerTable rows={fPartial} emptyText="No matches in this group." onManage={onManage} />
+          <RunnerList rows={fPartial} emptyText="No matches in this group." onManage={onManage} />
         </section>
       ) : null}
 
@@ -187,7 +279,7 @@ export function RosterSearchClient({
             ({query ? `${fChecked.length} of ${checkedIn.length}` : checkedIn.length})
           </span>
         </h2>
-        <RunnerTable
+        <RunnerList
           rows={fChecked}
           emptyText={query ? "No matches in this group." : "No one has checked in yet."}
           onManage={onManage}

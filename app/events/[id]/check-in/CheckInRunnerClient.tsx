@@ -44,6 +44,8 @@ type RunnerEntry = {
   assigned_bib?: string | null;
   distance_label: string;
   kiosk_checked_in_at?: string | null;
+  finish_time_ms?: number | null;
+  finish_time_display?: string | null;
 };
 
 type RunnerProfile = {
@@ -182,6 +184,8 @@ export function CheckInRunnerClient({
   const [withdrawPendingId, setWithdrawPendingId] = useState<string | null>(null);
   const [checkInPendingId, setCheckInPendingId] = useState<string | null>(null);
   const [undoCheckInPendingId, setUndoCheckInPendingId] = useState<string | null>(null);
+  const [finishTimeDrafts, setFinishTimeDrafts] = useState<Record<string, string>>({});
+  const [finishTimePendingId, setFinishTimePendingId] = useState<string | null>(null);
   /** Bib from search row if profile/entries haven’t loaded pr_id yet (same DB, kiosk display). */
   const [kioskBibFallback, setKioskBibFallback] = useState<string | null>(null);
 
@@ -317,6 +321,13 @@ export function CheckInRunnerClient({
         };
         setSelectedUserId(json.profile.id);
         setRunner(data);
+        if (variant === "promoter") {
+          const drafts: Record<string, string> = {};
+          for (const en of data.entries) {
+            if (en.finish_time_display?.trim()) drafts[en.id] = en.finish_time_display.trim();
+          }
+          setFinishTimeDrafts(drafts);
+        }
         return data;
       } catch {
         if (!opts.quietRefresh) {
@@ -328,7 +339,7 @@ export function CheckInRunnerClient({
         setLoadRunnerPending(false);
       }
     },
-    [eventId],
+    [eventId, variant],
   );
 
   useEffect(() => {
@@ -457,6 +468,8 @@ export function CheckInRunnerClient({
     setKioskBibFallback(null);
     setWalkUpSuccessNotice(null);
     setError(null);
+    setFinishTimeDrafts({});
+    setFinishTimePendingId(null);
     if (variant === "kiosk") {
       setSearchRows(null);
       setQ("");
@@ -607,6 +620,91 @@ export function CheckInRunnerClient({
       setError("Network error");
     } finally {
       setUndoCheckInPendingId(null);
+    }
+  }
+
+  async function saveFinishTime(entryId: string) {
+    const timeRaw = finishTimeDrafts[entryId]?.trim() ?? "";
+    if (!timeRaw) {
+      setError("Enter a finish time (e.g. 23:45 or 1:23:45).");
+      return;
+    }
+    setFinishTimePendingId(entryId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/promoter/events/${eventId}/manual-finish-time`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entryId, time: timeRaw }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        finish_time_ms?: number;
+        finish_time_display?: string;
+      };
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Could not save finish time");
+        return;
+      }
+      const display = json.finish_time_display ?? timeRaw;
+      setFinishTimeDrafts((prev) => ({ ...prev, [entryId]: display }));
+      setRunner((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          entries: prev.entries.map((en) =>
+            en.id === entryId
+              ? {
+                  ...en,
+                  finish_time_ms: json.finish_time_ms ?? en.finish_time_ms,
+                  finish_time_display: display,
+                }
+              : en,
+          ),
+        };
+      });
+    } catch {
+      setError("Network error");
+    } finally {
+      setFinishTimePendingId(null);
+    }
+  }
+
+  async function clearFinishTime(entryId: string) {
+    if (!window.confirm("Remove this finish time? It will no longer appear in the results import.")) {
+      return;
+    }
+    setFinishTimePendingId(entryId);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/promoter/events/${eventId}/manual-finish-time?entryId=${encodeURIComponent(entryId)}`,
+        { method: "DELETE" },
+      );
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        setError(json.error ?? "Could not remove finish time");
+        return;
+      }
+      setFinishTimeDrafts((prev) => {
+        const next = { ...prev };
+        delete next[entryId];
+        return next;
+      });
+      setRunner((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          entries: prev.entries.map((en) =>
+            en.id === entryId ? { ...en, finish_time_ms: null, finish_time_display: null } : en,
+          ),
+        };
+      });
+    } catch {
+      setError("Network error");
+    } finally {
+      setFinishTimePendingId(null);
     }
   }
 
@@ -1008,6 +1106,51 @@ export function CheckInRunnerClient({
                       </div>
                     </div>
                   </div>
+                  {variant === "promoter" ? (
+                    <div
+                      className="mt-3 border-t border-[#1E3A5F]/10 pt-3"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#1E3A5F]/55">
+                        Finish time
+                      </p>
+                      <p className="mt-0.5 text-xs text-[#1E3A5F]/60">
+                        Manual entry for results — use m:ss or h:mm:ss (feeds the results console).
+                      </p>
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={finishTimeDrafts[e.id] ?? ""}
+                          onChange={(ev) =>
+                            setFinishTimeDrafts((prev) => ({ ...prev, [e.id]: ev.target.value }))
+                          }
+                          placeholder="e.g. 23:45"
+                          className="min-w-0 flex-1 rounded-lg border border-[#1E3A5F]/20 px-3 py-2 font-mono text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
+                        />
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            disabled={finishTimePendingId === e.id}
+                            onClick={() => void saveFinishTime(e.id)}
+                            className="rounded-md bg-[#1E3A5F] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1E3A5F]/90 disabled:opacity-50"
+                          >
+                            {finishTimePendingId === e.id ? "Saving…" : "Save time"}
+                          </button>
+                          {e.finish_time_ms ? (
+                            <button
+                              type="button"
+                              disabled={finishTimePendingId === e.id}
+                              onClick={() => void clearFinishTime(e.id)}
+                              className="rounded-md border border-[#1E3A5F]/25 px-3 py-2 text-xs font-semibold text-[#1E3A5F] hover:border-red-300 hover:text-red-800 disabled:opacity-50"
+                            >
+                              Clear
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </li>
               );
               })}
