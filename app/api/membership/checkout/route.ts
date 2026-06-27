@@ -2,10 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe/server";
-import {
-  membershipSubscriptionConfiguredAsync,
-  stripePriceIdForTierAsync,
-} from "@/lib/stripe/membership-prices";
+import { stripePriceIdForTierAsync } from "@/lib/stripe/membership-prices";
 import { fetchMembershipTierConfigs } from "@/lib/membership-tier-config.server";
 
 export const runtime = "nodejs";
@@ -30,12 +27,12 @@ export async function POST(request: Request) {
 
   const tier = tierSlug;
   const stripe = getStripe();
-  const priceId = await stripePriceIdForTierAsync(tier);
-  if (!stripe || !priceId || !(await membershipSubscriptionConfiguredAsync(tier))) {
+  const priceId = await stripePriceIdForTierAsync(tier, { ensure: true });
+  if (!stripe || !priceId) {
     return NextResponse.json(
       {
         ok: false,
-        error: `${tierRow.display_name} checkout is not configured. Set a Stripe Price ID in Admin → Memberships.`,
+        error: `${tierRow.display_name} checkout is not available. Stripe is not configured on the server.`,
       },
       { status: 503 },
     );
