@@ -315,7 +315,7 @@ export function LandingNavbar() {
 
       {open ? (
         <div id="landing-mobile-nav" className="border-t border-[#1E3A5F]/10 bg-white md:hidden">
-          <div className="space-y-1 px-4 py-4 sm:px-6">
+          <div className="space-y-1 px-4 py-4 text-right sm:px-6">
             {navLinks.map((item) => (
               <Link
                 key={item.href}
@@ -326,15 +326,15 @@ export function LandingNavbar() {
                 {item.name}
               </Link>
             ))}
-            <div className="mt-4 flex flex-col gap-2 border-t border-[#1E3A5F]/10 pt-4">
+            <div className="mt-4 flex flex-col items-end gap-2 border-t border-[#1E3A5F]/10 pt-4 text-right">
               {!sessionReady ? (
                 <span
-                  className="inline-flex h-10 w-full animate-pulse rounded-md bg-[#1E3A5F]/10"
+                  className="inline-flex h-10 w-32 animate-pulse rounded-md bg-[#1E3A5F]/10"
                   aria-hidden
                 />
               ) : signedIn ? (
-                <div className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center justify-center gap-2 py-1">
+                <div className="flex w-full flex-col items-end gap-1">
+                  <div className="flex flex-wrap items-center justify-end gap-2 py-1">
                     <span className="text-base font-semibold text-[#1E3A5F]">{greeting}</span>
                     {platformAdminBadge ? (
                       <span
@@ -347,7 +347,7 @@ export function LandingNavbar() {
                   {platformAdminBadge ? (
                     <Link
                       href={adminLink.href}
-                      className="block py-2 pl-2 text-base font-medium text-[#E87722] hover:underline"
+                      className="block py-2 text-base font-medium text-[#E87722] hover:underline"
                       onClick={() => setOpen(false)}
                     >
                       Admin dashboard
@@ -355,21 +355,21 @@ export function LandingNavbar() {
                   ) : null}
                   <Link
                     href={membershipLink.href}
-                    className="block py-2 pl-2 text-base font-medium text-[#1E3A5F] hover:text-[#E87722]"
+                    className="block py-2 text-base font-medium text-[#1E3A5F] hover:text-[#E87722]"
                     onClick={() => setOpen(false)}
                   >
                     {membershipLink.name}
                   </Link>
                   <Link
                     href={walletLink.href}
-                    className="block py-2 pl-2 text-base font-medium text-[#1E3A5F] hover:text-[#E87722]"
+                    className="block py-2 text-base font-medium text-[#1E3A5F] hover:text-[#E87722]"
                     onClick={() => setOpen(false)}
                   >
                     {walletLink.name}
                   </Link>
                   <button
                     type="button"
-                    className="block w-full py-2 pl-2 text-left text-base font-medium text-[#1E3A5F]/80 hover:text-[#E87722]"
+                    className="block py-2 text-base font-medium text-[#1E3A5F]/80 hover:text-[#E87722]"
                     onClick={() => {
                       setOpen(false);
                       void handleSignOut();
