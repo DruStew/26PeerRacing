@@ -132,7 +132,7 @@ export function MembershipTierPicker({
     if (tier.is_paid && !tier.checkout_enabled) {
       return (
         <span className="mt-5 inline-flex w-full items-center justify-center rounded-md border border-[#1E3A5F]/15 bg-[#1E3A5F]/5 px-4 py-2.5 text-sm font-medium text-[#1E3A5F]/55">
-          Checkout coming soon
+          Checkout not configured for this tier
         </span>
       );
     }

@@ -16,6 +16,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 
+export const dynamic = "force-dynamic";
+
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
   const d = new Date(value);

@@ -8,6 +8,8 @@ import { DEFAULT_PUBLIC_ROUTE, MEMBERSHIP_ACCOUNT_ROUTE } from "@/lib/routes";
 import { membershipSubscriptionConfiguredAsync } from "@/lib/stripe/membership-prices";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export default async function MembershipPage() {
   const supabase = await createServerSupabaseClient();
   const {
