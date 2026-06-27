@@ -1,5 +1,4 @@
-import { MemberRoleToggles } from "@/components/admin/MemberRoleToggles";
-import { MemberTierSelect } from "@/components/admin/MemberTierSelect";
+import { MemberAccountEditor } from "@/components/admin/MemberAccountEditor";
 import { isGlobalScopedRole } from "@/lib/admin/platform-roles";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { fetchMembershipTierConfigs } from "@/lib/membership-tier-config.server";
@@ -100,8 +99,8 @@ export default async function AdminMembersPage({
       </h1>
       <p className="mt-3 max-w-2xl text-pretty text-[#1E3A5F]/75">
         Search by name or email. Set platform roles (Super Admin, Admin, Promoter) and membership
-        level (Free, PR-Team, Top Tier, etc.). Members with no role toggled are regular{" "}
-        <strong>Member</strong> accounts.
+        level (Free, PR-Team, Top Tier, etc.), then click <strong>Save changes</strong>. Members
+        with no role toggled are regular <strong>Member</strong> accounts.
       </p>
 
       <form method="get" className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -185,14 +184,10 @@ export default async function AdminMembersPage({
                   </div>
                 </div>
                 <div className="w-full shrink-0 lg:max-w-sm">
-                  <h3 className="text-sm font-semibold text-[#1E3A5F]">Platform Roles</h3>
-                  <MemberRoleToggles
+                  <MemberAccountEditor
                     userId={id}
                     canManagePrivilegedRoles={admin.isSuperAdmin}
-                    initial={initial}
-                  />
-                  <MemberTierSelect
-                    userId={id}
+                    initialRoles={initial}
                     initialTier={memberTier}
                     tiers={activeTiers.map((t) => ({
                       slug: t.slug,

@@ -6,6 +6,7 @@ import { GLOBAL_ROLE_SCOPE_ID } from "@/lib/admin/constants";
 import type { ManageableRole } from "@/lib/admin/member-roles";
 import { SUPER_ADMIN_ONLY_ROLES } from "@/lib/admin/platform-roles";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
 async function countGlobalRoleHolders(
   supabase: Awaited<ReturnType<typeof requireAdmin>>["supabase"],
@@ -148,12 +149,90 @@ export async function setMemberMembershipTier(
     patch.status = "active";
   }
 
-  const { error } = await supabase.from("memberships").update(patch).eq("user_id", targetUserId);
+  const { data: existing, error: fetchErr } = await supabase
+    .from("memberships")
+    .select("user_id")
+    .eq("user_id", targetUserId)
+    .maybeSingle();
 
-  if (error) {
-    return { ok: false, error: error.message };
+  if (fetchErr) {
+    return { ok: false, error: fetchErr.message };
+  }
+
+  if (existing) {
+    const { data: updated, error } = await supabase
+      .from("memberships")
+      .update(patch)
+      .eq("user_id", targetUserId)
+      .select("user_id")
+      .maybeSingle();
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    if (!updated) {
+      return { ok: false, error: "Could not update membership. Try again or contact support." };
+    }
+  } else {
+    const service = createServiceRoleSupabaseClient();
+    if (!service) {
+      return { ok: false, error: "Server cannot create a membership record." };
+    }
+
+    const endAt =
+      slug === "free"
+        ? null
+        : (() => {
+            const end = new Date();
+            end.setFullYear(end.getFullYear() + 1);
+            return end.toISOString();
+          })();
+
+    const { error } = await service.from("memberships").insert({
+      user_id: targetUserId,
+      status: "active",
+      tier: slug,
+      membership_start_at: new Date().toISOString(),
+      membership_end_at: endAt,
+      renewal_count: 0,
+      updated_at: patch.updated_at as string,
+      stripe_subscription_id: null,
+    });
+
+    if (error) {
+      return { ok: false, error: error.message };
+    }
   }
 
   revalidatePath("/admin/members");
   return { ok: true };
+}
+
+export async function saveMemberAccountSettings(
+  targetUserId: string,
+  settings: {
+    superAdmin: boolean;
+    admin: boolean;
+    promoter: boolean;
+    booth: boolean;
+    tierSlug: string;
+  },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdmin("/admin/members");
+
+  const roleUpdates: { role: ManageableRole; enabled: boolean }[] = [
+    { role: "super_admin", enabled: settings.superAdmin },
+    { role: "admin", enabled: settings.admin },
+    { role: "promoter", enabled: settings.promoter },
+    { role: "booth", enabled: settings.booth },
+  ];
+
+  for (const { role, enabled } of roleUpdates) {
+    const result = await setGlobalRole(targetUserId, role, enabled);
+    if (!result.ok) {
+      return result;
+    }
+  }
+
+  return setMemberMembershipTier(targetUserId, settings.tierSlug);
 }
