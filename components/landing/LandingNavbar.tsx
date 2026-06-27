@@ -147,15 +147,14 @@ export function LandingNavbar() {
     window.location.assign("/");
   }
 
-  // Promoters/admins manage their own events here ("My Events"); everyone else
-  // (runners and signed-out visitors) gets the public "Race Results" index.
-  const promoterNavLink = isRaceStaff ? { name: "My Events", href: "/promoter" } : raceResultsLink;
+  const myEventsLink = { name: "My Events", href: "/promoter" } as const;
 
   const navLinks = signedIn
     ? [
         publicNav[0],
         publicNav[1],
-        promoterNavLink,
+        raceResultsLink,
+        ...(isRaceStaff ? [myEventsLink] : []),
         myEntriesLink,
         myResultsLink,
       ]
