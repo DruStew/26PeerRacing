@@ -13,6 +13,12 @@ export const MY_RESULTS_ROUTE = "/my-results";
 /** Public index of races with published official results. */
 export const RACE_RESULTS_ROUTE = "/results";
 
+/** Public membership tiers browse page. */
+export const MEMBERSHIP_ROUTE = "/membership";
+
+/** Signed-in membership account (renew, upgrade, profile). */
+export const MEMBERSHIP_ACCOUNT_ROUTE = "/membership/renew";
+
 /** Peer Racing wallet (credits, payouts, future bank transfer). */
 export const WALLET_ROUTE = "/wallet";
 

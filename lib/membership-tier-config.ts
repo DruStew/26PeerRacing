@@ -14,7 +14,8 @@ export const FALLBACK_MEMBERSHIP_TIERS: MembershipTierConfigRow[] = [
   {
     slug: "free",
     display_name: "Free",
-    description: null,
+    description:
+      "Create your Peer Racing profile, browse events, and enter community races open to all members.",
     price_cents: 0,
     stripe_price_id: null,
     sort_order: 0,
@@ -25,7 +26,8 @@ export const FALLBACK_MEMBERSHIP_TIERS: MembershipTierConfigRow[] = [
   {
     slug: "pr_team",
     display_name: "PR-Team",
-    description: null,
+    description:
+      "Standard annual membership — enter most Peer Racing events, register as a promoter, and act as a pacer.",
     price_cents: 5000,
     stripe_price_id: null,
     sort_order: 1,
@@ -36,7 +38,8 @@ export const FALLBACK_MEMBERSHIP_TIERS: MembershipTierConfigRow[] = [
   {
     slug: "top_tier",
     display_name: "Top Tier",
-    description: null,
+    description:
+      "Premium annual membership for top-tier-only races and the full Peer Racing experience.",
     price_cents: 25000,
     stripe_price_id: null,
     sort_order: 2,
@@ -79,4 +82,15 @@ export function paidTiersFromConfig(
   tiers: MembershipTierConfigRow[],
 ): MembershipTierConfigRow[] {
   return tiers.filter((t) => t.is_active && t.is_paid);
+}
+
+/** Display copy when admin has not set a tier description. */
+export function membershipTierDescription(slug: string): string {
+  const fallback = FALLBACK_MEMBERSHIP_TIERS.find((t) => t.slug === slug)?.description;
+  return fallback?.trim() || "Peer Racing membership tier.";
+}
+
+export function resolveTierDescription(tier: Pick<MembershipTierConfigRow, "slug" | "description">): string {
+  const custom = tier.description?.trim();
+  return custom || membershipTierDescription(tier.slug);
 }

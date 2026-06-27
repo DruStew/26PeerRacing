@@ -2,20 +2,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
+import { MembershipTierPicker } from "@/components/membership/MembershipTierPicker";
+import { DEFAULT_PUBLIC_ROUTE, MEMBERSHIP_ROUTE } from "@/lib/routes";
 import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
 import { MEMBERSHIP_TIER_LABELS } from "@/lib/membership-tiers";
 import {
   anyPaidMembershipCheckoutConfiguredAsync,
   membershipSubscriptionConfiguredAsync,
 } from "@/lib/stripe/membership-prices";
-import { tierLabelFromConfig } from "@/lib/membership-tier-config";
+import { resolveTierDescription, tierLabelFromConfig } from "@/lib/membership-tier-config";
 import { fetchMembershipTierConfigs } from "@/lib/membership-tier-config.server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { formatCalendarDate } from "@/lib/format-calendar-date";
-
-import { RenewMembershipForm } from "./RenewMembershipForm";
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
@@ -60,7 +59,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 export default async function MembershipRenewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ returnUrl?: string; canceled?: string }>;
+  searchParams: Promise<{ returnUrl?: string; canceled?: string; tier?: string }>;
 }) {
   const supabase = await createServerSupabaseClient();
   const {
@@ -73,6 +72,7 @@ export default async function MembershipRenewPage({
 
   const resolved = await searchParams;
   const showCheckoutCanceled = resolved.canceled === "1";
+  const highlightTier = resolved.tier?.trim() || null;
 
   const { data: membershipRaw } = await supabase
     .from("memberships")
@@ -113,13 +113,18 @@ export default async function MembershipRenewPage({
     MEMBERSHIP_TIER_LABELS[currentTier as keyof typeof MEMBERSHIP_TIER_LABELS] ||
     currentTier;
 
-  const paidTierRows = tierConfigs.filter((t) => t.is_active && t.is_paid);
-  const paidTiers = await Promise.all(
-    paidTierRows.map(async (t) => ({
+  const activeTierRows = tierConfigs
+    .filter((t) => t.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order);
+  const pickerTiers = await Promise.all(
+    activeTierRows.map(async (t) => ({
       slug: t.slug,
       display_name: t.display_name,
-      price_usd: t.price_cents / 100,
-      checkout_enabled: await membershipSubscriptionConfiguredAsync(t.slug),
+      description: resolveTierDescription(t),
+      price_cents: t.price_cents,
+      rank: t.rank,
+      is_paid: t.is_paid,
+      checkout_enabled: t.is_paid ? await membershipSubscriptionConfiguredAsync(t.slug) : true,
     })),
   );
   const showDevFree = !(await anyPaidMembershipCheckoutConfiguredAsync());
@@ -141,11 +146,11 @@ export default async function MembershipRenewPage({
           Membership
         </p>
         <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
-          Renew Membership
+          My Membership
         </h1>
         <p className="mt-3 text-pretty text-[#1E3A5F]/75">
-          Review your account and membership below. Renew to create events, enter races, and act as
-          a pacer. Renewal extends your membership by one year.
+          Review your account, current plan, and benefits. Compare other membership levels below to
+          upgrade or renew.
         </p>
 
         {profile?.pr_id?.trim() ? (
@@ -314,7 +319,22 @@ export default async function MembershipRenewPage({
         ) : null}
 
         <section className="mt-8 rounded-xl border border-[#E87722]/25 bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Membership Plan</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">
+                Membership Plans
+              </h2>
+              <p className="mt-1 text-sm text-[#1E3A5F]/65">
+                You&apos;re on <strong>{tierLabel}</strong>. Choose another level to upgrade.
+              </p>
+            </div>
+            <Link
+              href={MEMBERSHIP_ROUTE}
+              className="text-sm font-medium text-[#E87722] underline-offset-2 hover:underline"
+            >
+              View all plans
+            </Link>
+          </div>
           {showCheckoutCanceled ? (
             <div
               className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -324,10 +344,13 @@ export default async function MembershipRenewPage({
             </div>
           ) : null}
           <div className="mt-6">
-            <RenewMembershipForm
+            <MembershipTierPicker
+              tiers={pickerTiers}
+              mode="manage"
+              signedIn
+              currentTierSlug={currentTier}
               returnUrl={resolved.returnUrl?.startsWith("/") ? resolved.returnUrl : null}
-              currentTier={currentTier}
-              paidTiers={paidTiers}
+              highlightTierSlug={highlightTier}
               showDevFree={showDevFree}
             />
           </div>

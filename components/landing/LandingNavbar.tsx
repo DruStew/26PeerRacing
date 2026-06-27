@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   DEFAULT_PUBLIC_ROUTE,
+  MEMBERSHIP_ACCOUNT_ROUTE,
+  MEMBERSHIP_ROUTE,
   MY_ENTRIES_ROUTE,
   MY_RESULTS_ROUTE,
   RACE_RESULTS_ROUTE,
@@ -23,7 +25,12 @@ const raceResultsLink = { name: "Race Results", href: RACE_RESULTS_ROUTE } as co
 
 const membershipLink = {
   name: "Membership",
-  href: "/membership/renew",
+  href: MEMBERSHIP_ROUTE,
+} as const;
+
+const membershipAccountLink = {
+  name: "Membership",
+  href: MEMBERSHIP_ACCOUNT_ROUTE,
 } as const;
 
 const walletLink = { name: "Wallet", href: WALLET_ROUTE } as const;
@@ -248,12 +255,12 @@ export function LandingNavbar() {
                     </>
                   ) : null}
                   <Link
-                    href={membershipLink.href}
+                    href={membershipAccountLink.href}
                     role="menuitem"
                     className="block px-3 py-2 text-sm font-medium text-[#1E3A5F] hover:bg-[#1E3A5F]/5 hover:text-[#E87722]"
                     onClick={() => setUserMenuOpen(false)}
                   >
-                    {membershipLink.name}
+                    {membershipAccountLink.name}
                   </Link>
                   <Link
                     href={walletLink.href}
@@ -354,11 +361,11 @@ export function LandingNavbar() {
                     </Link>
                   ) : null}
                   <Link
-                    href={membershipLink.href}
+                    href={membershipAccountLink.href}
                     className="block py-2 text-base font-medium text-[#1E3A5F] hover:text-[#E87722]"
                     onClick={() => setOpen(false)}
                   >
-                    {membershipLink.name}
+                    {membershipAccountLink.name}
                   </Link>
                   <Link
                     href={walletLink.href}

@@ -48,6 +48,7 @@ export async function updateMembershipTier(
   }
 
   revalidatePath("/admin/memberships");
+  revalidatePath("/membership");
   revalidatePath("/membership/renew");
   return { ok: true };
 }
@@ -97,5 +98,7 @@ export async function createMembershipTier(
   }
 
   revalidatePath("/admin/memberships");
+  revalidatePath("/membership");
+  revalidatePath("/membership/renew");
   return { ok: true };
 }
