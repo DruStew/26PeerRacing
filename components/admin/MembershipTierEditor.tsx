@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { createMembershipTier, updateMembershipTier } from "@/app/admin/memberships/actions";
-import { formatTierPriceUsd } from "@/lib/membership-tier-config";
+import { centsToPriceInputValue, formatTierPriceUsd } from "@/lib/membership-tier-config";
 import type { MembershipTierConfigRow } from "@/lib/membership-tier-config";
 
 export function MembershipTierEditor({
@@ -68,17 +68,22 @@ export function MembershipTierEditor({
           />
         </div>
         <div>
-          <label className="text-sm font-medium text-[#1E3A5F]">Price (cents)</label>
-          <input
-            name="price_cents"
-            type="number"
-            min={0}
-            step={1}
-            defaultValue={tier.price_cents}
-            required
-            className="mt-1 w-full rounded-md border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm"
-          />
-          <p className="mt-1 text-xs text-[#1E3A5F]/55">5000 = $50.00/yr</p>
+          <label className="text-sm font-medium text-[#1E3A5F]">Annual price (USD)</label>
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#1E3A5F]/50">
+              $
+            </span>
+            <input
+              name="price_usd"
+              type="number"
+              min={0}
+              step={0.01}
+              defaultValue={centsToPriceInputValue(tier.price_cents)}
+              required
+              className="w-full rounded-md border border-[#1E3A5F]/20 bg-white py-2 pl-7 pr-3 text-sm"
+            />
+          </div>
+          <p className="mt-1 text-xs text-[#1E3A5F]/55">Per year, before tax.</p>
         </div>
         <div>
           <label className="text-sm font-medium text-[#1E3A5F]">Stripe Price ID</label>
@@ -207,8 +212,21 @@ export function AddMembershipTierForm() {
           <input name="display_name" required className="mt-1 w-full rounded-md border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm" />
         </div>
         <div>
-          <label className="text-sm font-medium text-[#1E3A5F]">Price (cents)</label>
-          <input name="price_cents" type="number" min={0} defaultValue={10000} className="mt-1 w-full rounded-md border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm" />
+          <label className="text-sm font-medium text-[#1E3A5F]">Annual price (USD)</label>
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#1E3A5F]/50">
+              $
+            </span>
+            <input
+              name="price_usd"
+              type="number"
+              min={0}
+              step={0.01}
+              defaultValue="100.00"
+              required
+              className="w-full rounded-md border border-[#1E3A5F]/20 bg-white py-2 pl-7 pr-3 text-sm"
+            />
+          </div>
         </div>
         <div>
           <label className="text-sm font-medium text-[#1E3A5F]">Stripe Price ID</label>

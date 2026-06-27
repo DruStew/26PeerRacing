@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireAdmin, requireSuperAdmin } from "@/lib/admin/require-admin";
+import { parsePriceUsdToCents } from "@/lib/membership-tier-config";
 
 export async function updateMembershipTier(
   slug: string,
@@ -12,19 +13,19 @@ export async function updateMembershipTier(
 
   const displayName = String(formData.get("display_name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
-  const priceRaw = String(formData.get("price_cents") ?? "").trim();
+  const priceRaw = String(formData.get("price_usd") ?? "").trim();
   const stripePriceId = String(formData.get("stripe_price_id") ?? "").trim() || null;
   const sortOrder = Number(formData.get("sort_order") ?? 0);
   const rank = Number(formData.get("rank") ?? 0);
   const isActive = formData.get("is_active") === "1";
   const isPaid = formData.get("is_paid") === "1";
 
-  const priceCents = Math.round(Number(priceRaw));
+  const priceCents = parsePriceUsdToCents(priceRaw);
   if (!displayName) {
     return { ok: false, error: "Display name is required." };
   }
-  if (!Number.isFinite(priceCents) || priceCents < 0) {
-    return { ok: false, error: "Price must be a valid non-negative number (cents)." };
+  if (priceCents === null) {
+    return { ok: false, error: "Price must be a valid dollar amount (e.g. 50.00)." };
   }
 
   const { error } = await supabase
@@ -63,7 +64,7 @@ export async function createMembershipTier(
     .replace(/^_+|_+$/g, "");
   const displayName = String(formData.get("display_name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
-  const priceCents = Math.round(Number(String(formData.get("price_cents") ?? "0")));
+  const priceCents = parsePriceUsdToCents(String(formData.get("price_usd") ?? ""));
   const stripePriceId = String(formData.get("stripe_price_id") ?? "").trim() || null;
   const sortOrder = Number(formData.get("sort_order") ?? 99);
   const rank = Number(formData.get("rank") ?? 1);
@@ -75,8 +76,8 @@ export async function createMembershipTier(
   if (!displayName) {
     return { ok: false, error: "Display name is required." };
   }
-  if (!Number.isFinite(priceCents) || priceCents < 0) {
-    return { ok: false, error: "Invalid price." };
+  if (priceCents === null) {
+    return { ok: false, error: "Price must be a valid dollar amount (e.g. 50.00)." };
   }
 
   const { error } = await supabase.from("membership_tier_config").insert({

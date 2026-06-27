@@ -48,7 +48,24 @@ export const FALLBACK_MEMBERSHIP_TIERS: MembershipTierConfigRow[] = [
 
 export function formatTierPriceUsd(priceCents: number): string {
   if (priceCents <= 0) return "Free";
-  return `$${(priceCents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`;
+  return `$${(priceCents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}/yr`;
+}
+
+/** Form input value from stored cents (e.g. 5000 → "50.00"). */
+export function centsToPriceInputValue(priceCents: number): string {
+  return (priceCents / 100).toFixed(2);
+}
+
+/** Parse admin price field ("50", "50.00", "$50.00") into integer cents. */
+export function parsePriceUsdToCents(value: string): number | null {
+  const cleaned = value.replace(/[$,\s]/g, "").trim();
+  if (!cleaned) return null;
+  const dollars = Number(cleaned);
+  if (!Number.isFinite(dollars) || dollars < 0) return null;
+  return Math.round(dollars * 100);
 }
 
 export function tierLabelFromConfig(
