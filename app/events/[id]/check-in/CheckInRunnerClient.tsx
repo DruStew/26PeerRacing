@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { KioskCreateMemberPanel } from "@/components/kiosk/KioskCreateMemberPanel";
 import { KioskWalkUpEntryForm, type KioskEnterFlow } from "@/components/kiosk/KioskWalkUpEntryForm";
+import { TimeNumpadInput } from "@/components/promoter/TimeNumpadInput";
 import {
   carryOverLinkedEntryIds,
   carryOverLinkedLabels,
@@ -186,6 +187,7 @@ export function CheckInRunnerClient({
   const [undoCheckInPendingId, setUndoCheckInPendingId] = useState<string | null>(null);
   const [finishTimeDrafts, setFinishTimeDrafts] = useState<Record<string, string>>({});
   const [finishTimePendingId, setFinishTimePendingId] = useState<string | null>(null);
+  const [activeFinishTimeEntryId, setActiveFinishTimeEntryId] = useState<string | null>(null);
   /** Bib from search row if profile/entries haven’t loaded pr_id yet (same DB, kiosk display). */
   const [kioskBibFallback, setKioskBibFallback] = useState<string | null>(null);
 
@@ -470,6 +472,7 @@ export function CheckInRunnerClient({
     setError(null);
     setFinishTimeDrafts({});
     setFinishTimePendingId(null);
+    setActiveFinishTimeEntryId(null);
     if (variant === "kiosk") {
       setSearchRows(null);
       setQ("");
@@ -1115,18 +1118,18 @@ export function CheckInRunnerClient({
                         Finish time
                       </p>
                       <p className="mt-0.5 text-xs text-[#1E3A5F]/60">
-                        Manual entry for results — use m:ss or h:mm:ss (feeds the results console).
+                        Tap to open the keypad — enter H:MM:SS or M:SS (feeds the results console).
                       </p>
-                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
+                        <TimeNumpadInput
                           value={finishTimeDrafts[e.id] ?? ""}
-                          onChange={(ev) =>
-                            setFinishTimeDrafts((prev) => ({ ...prev, [e.id]: ev.target.value }))
+                          onChange={(v) =>
+                            setFinishTimeDrafts((prev) => ({ ...prev, [e.id]: v }))
                           }
-                          placeholder="e.g. 23:45"
-                          className="min-w-0 flex-1 rounded-lg border border-[#1E3A5F]/20 px-3 py-2 font-mono text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25"
+                          placeholder="0:00:00"
+                          disabled={finishTimePendingId === e.id}
+                          open={activeFinishTimeEntryId === e.id}
+                          onOpenChange={(next) => setActiveFinishTimeEntryId(next ? e.id : null)}
                         />
                         <div className="flex shrink-0 gap-2">
                           <button
