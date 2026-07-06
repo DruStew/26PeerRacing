@@ -52,8 +52,14 @@ function sortDistancesForDisplay(distances: DistanceRow[]): DistanceRow[] {
   });
 }
 
-/** Earliest distance entry deadline (first door to close), for list card summary. */
-function earliestDistanceDeadline(distances: DistanceRow[]): string | null {
+/**
+ * Earliest online-registration close (first door to close) for the list card:
+ * legacy per-distance deadlines, falling back to the event-level close.
+ */
+function earliestOnlineRegClose(
+  eventPrCutoff: string | null,
+  distances: DistanceRow[],
+): string | null {
   let best: number | null = null;
   for (const d of distances) {
     if (!d.pr_cutoff) continue;
@@ -61,7 +67,12 @@ function earliestDistanceDeadline(distances: DistanceRow[]): string | null {
     if (Number.isNaN(t)) continue;
     if (best === null || t < best) best = t;
   }
-  return best != null ? new Date(best).toISOString() : null;
+  if (best != null) return new Date(best).toISOString();
+  if (eventPrCutoff) {
+    const t = new Date(eventPrCutoff).getTime();
+    if (!Number.isNaN(t)) return new Date(t).toISOString();
+  }
+  return null;
 }
 
 export default async function EventsPage({
@@ -77,7 +88,7 @@ export default async function EventsPage({
   // off here (entries closed) and surface on the public Race Results index.
   const { data: events } = await supabaseServer
     .from("events")
-    .select("id,name,city,state,race_date")
+    .select("id,name,city,state,race_date,pr_cutoff")
     .eq("status", "published")
     .order("race_date", { ascending: true });
 
@@ -100,7 +111,10 @@ export default async function EventsPage({
   }
 
   const openEvents = allEvents.filter((e) =>
-    areEntriesOpenForEvent(null, distancesByEvent.get(e.id) ?? []),
+    areEntriesOpenForEvent(
+      (e as { pr_cutoff?: string | null }).pr_cutoff ?? null,
+      distancesByEvent.get(e.id) ?? [],
+    ),
   );
 
   const totalPages = Math.max(1, Math.ceil(openEvents.length / PAGE_SIZE));
@@ -179,8 +193,9 @@ export default async function EventsPage({
                 const distances = sortDistancesForDisplay(
                   distancesByEvent.get(event.id) ?? [],
                 );
-                const listDeadline = earliestDistanceDeadline(distances);
-                const entriesOpen = areEntriesOpenForEvent(null, distances);
+                const eventPrCutoff = (event as { pr_cutoff?: string | null }).pr_cutoff ?? null;
+                const listDeadline = earliestOnlineRegClose(eventPrCutoff, distances);
+                const entriesOpen = areEntriesOpenForEvent(eventPrCutoff, distances);
                 const dCounts = countByEventDistance.get(event.id);
                 const artworkUrl = (event as { artwork_url?: string | null }).artwork_url ?? null;
 
@@ -277,7 +292,7 @@ export default async function EventsPage({
                                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                                 />
                               </svg>
-                              Entry deadline: {formatEntryDeadline(listDeadline)}
+                              Online reg closes: {formatEntryDeadline(listDeadline)}
                             </span>
                           </div>
                           {distances.length > 0 ? (

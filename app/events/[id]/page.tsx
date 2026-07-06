@@ -53,7 +53,7 @@ export async function generateMetadata({
   const supabase = await createServerSupabaseClient();
   const { data: event } = await supabase
     .from("events")
-    .select("name,city,state,race_date,artwork_url")
+    .select("name,city,state,race_date,artwork_url,pr_cutoff")
     .eq("id", id)
     .single();
 
@@ -67,7 +67,7 @@ export async function generateMetadata({
     .eq("event_id", id);
 
   const entriesOpen = areEntriesOpenForEvent(
-    null,
+    (event as { pr_cutoff?: string | null }).pr_cutoff ?? null,
     (distances ?? []).map((d) => ({
       pr_cutoff: d.pr_cutoff ?? null,
       results_published_at:
@@ -102,7 +102,7 @@ export default async function EventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name,entries_open_at",
+      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name,entries_open_at,pr_cutoff",
     )
     .eq("id", id)
     .single();
@@ -120,8 +120,9 @@ export default async function EventPage({
     .order("gun_time", { ascending: true, nullsFirst: true });
 
   const distanceRows = distances ?? [];
+  const eventOnlineRegClosesAt = (event as { pr_cutoff?: string | null }).pr_cutoff ?? null;
   const entriesOpen = areEntriesOpenForEvent(
-    null,
+    eventOnlineRegClosesAt,
     distanceRows.map((d) => ({
       pr_cutoff: d.pr_cutoff ?? null,
       results_published_at:
@@ -391,9 +392,12 @@ export default async function EventPage({
                     | null;
                 const courseMeters = courseLengthMeters(course);
                 const hasCourse = courseMeters > 0;
+                const onlineRegCloses = prCutoff ?? eventOnlineRegClosesAt;
                 const scheduleParts = [
                   gun ? `Gun: ${formatDateTime(gun)}` : null,
-                  prCutoff ? `Entry deadline: ${formatDateTime(prCutoff)}` : null,
+                  onlineRegCloses
+                    ? `Online registration closes: ${formatDateTime(onlineRegCloses)}`
+                    : null,
                 ].filter(Boolean);
                 return (
                   <li
@@ -513,7 +517,7 @@ export default async function EventPage({
             <span
               className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-[#1E3A5F]/15 bg-[#1E3A5F]/08 px-6 py-3 text-sm font-semibold text-[#1E3A5F]/40"
               aria-disabled="true"
-              title="Entry deadline has passed for this event"
+              title="Online registration has closed for this event"
             >
               Enter race
             </span>

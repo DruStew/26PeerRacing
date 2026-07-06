@@ -11,13 +11,14 @@ import {
   toDatetimeLocalInputValue,
 } from "@/lib/datetime-local";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
+import { effectiveCheckInWindow, type DistanceLogistics } from "@/lib/race-day/logistics";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { EventScheduleForm } from "@/components/events/EventScheduleForm";
 import { OrganizerContactForm } from "@/components/promoter/OrganizerContactForm";
 import { DeleteEventSection } from "@/components/promoter/DeleteEventSection";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
-import { GunEntryDeadlineFields } from "@/components/promoter/GunEntryDeadlineFields";
+import { GunCheckInFields } from "@/components/promoter/GunCheckInFields";
 import { VenuePickerLazy } from "@/components/maps/VenuePickerLazy";
 import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
 import { parseRaceDayLinksJson } from "@/lib/race-day-links";
@@ -53,7 +54,7 @@ export default async function EditEventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo,organizer_contact_name,organizer_contact_email,entries_open_at",
+      "id,name,city,state,race_date,end_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo,organizer_contact_name,organizer_contact_email,entries_open_at",
     )
     .eq("id", id)
     .single();
@@ -81,7 +82,7 @@ export default async function EditEventPage({
 
   const { data: distancesSchedule } = await supabase
     .from("distances")
-    .select("id,label,race_name,gun_time,pr_cutoff")
+    .select("id,label,race_name,gun_time,check_in_opens_at,check_in_closes_at,allow_walk_ups")
     .eq("event_id", id)
     .order("gun_time", { ascending: true, nullsFirst: true });
 
@@ -130,8 +131,22 @@ export default async function EditEventPage({
     const raceName = raceNameRaw || null;
     const gunTimeRaw = String(formData.get("gun_time") ?? "").trim();
     const gunTime = gunTimeRaw ? new Date(gunTimeRaw).toISOString() : null;
-    const prCutoffRaw = String(formData.get("pr_cutoff") ?? "").trim();
-    const prCutoff = prCutoffRaw ? new Date(prCutoffRaw).toISOString() : null;
+    const parseDatetime = (field: string): string | null => {
+      const raw = String(formData.get(field) ?? "").trim();
+      if (!raw) return null;
+      const d = new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    };
+    const checkInOpens = parseDatetime("check_in_opens_at");
+    const checkInCloses = parseDatetime("check_in_closes_at");
+    const allowWalkUps = formData.get("allow_walk_ups") === "1";
+    const walkUpFeeDollarsRaw = formData.get("walk_up_fee_dollars");
+    const walkUpFeeCents = (() => {
+      if (walkUpFeeDollarsRaw == null || String(walkUpFeeDollarsRaw).trim() === "") return null;
+      const d = parseFloat(String(walkUpFeeDollarsRaw).replace(/[$,\s]/g, ""));
+      if (Number.isNaN(d) || d < 0) return null;
+      return Math.round(d * 100);
+    })();
     const isQualifier = formData.get("is_peer_racing_qualifier") === "1";
     const allowRollOverFrom =
       String(formData.get("allow_roll_over_from_qualifier") ?? "").toLowerCase() === "yes";
@@ -163,7 +178,10 @@ export default async function EditEventPage({
         label,
         race_name: raceName,
         gun_time: gunTime,
-        pr_cutoff: prCutoff,
+        check_in_opens_at: checkInOpens,
+        check_in_closes_at: checkInCloses,
+        allow_walk_ups: allowWalkUps,
+        walk_up_fee_cents: allowWalkUps ? walkUpFeeCents : null,
         is_peer_racing_qualifier: isQualifier,
         allow_roll_over_from_qualifier: isQualifier && allowRollOverFrom,
         allow_qualifier_split_to_roll_over_here: !isQualifier && allowQualifierRollOverHere,
@@ -214,7 +232,7 @@ export default async function EditEventPage({
   const isDemo = (event as { is_demo?: boolean }).is_demo === true;
   const raceDay = event.race_date as string | null;
   const defaultGunTime = defaultDatetimeLocalFromRaceDay(raceDay, 8, 0);
-  const defaultEntryDeadline = entryDeadlineDatetimeLocalFromGun(defaultGunTime, 30);
+  const defaultCheckInOpens = entryDeadlineDatetimeLocalFromGun(defaultGunTime, 60) ?? "";
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
@@ -310,14 +328,16 @@ export default async function EditEventPage({
           </div>
           <div className="rounded-lg border border-[#1E3A5F]/10 bg-[#fafbfc] px-4 py-3">
             <p className="text-xs font-medium uppercase tracking-wide text-[#1E3A5F]/50">
-              Gun / entry deadline by distance
+              Gun / check-in by distance
             </p>
             <div className="mt-1 text-[#1E3A5F]">
               {distancesSchedule && distancesSchedule.length > 0 ? (
                 <ul className="space-y-2.5">
                   {distancesSchedule.map((row) => {
                     const gun = (row as { gun_time?: string | null }).gun_time;
-                    const cutoff = (row as { pr_cutoff?: string | null }).pr_cutoff;
+                    const checkIn = effectiveCheckInWindow(row as DistanceLogistics);
+                    const walkUps =
+                      (row as { allow_walk_ups?: boolean | null }).allow_walk_ups !== false;
                     return (
                       <li key={row.id} className="text-sm leading-snug">
                         <span className="font-medium text-[#1E3A5F]">
@@ -330,7 +350,9 @@ export default async function EditEventPage({
                           {" "}
                           — Gun {formatDateTimeLocal(gun ?? null)}
                           {" · "}
-                          Entry deadline {formatDateTimeLocal(cutoff ?? null)}
+                          Check-in {formatDateTimeLocal(checkIn.opensAt)} –{" "}
+                          {formatDateTimeLocal(checkIn.closesAt)}
+                          {walkUps ? " · Walk-ups OK" : " · No walk-ups"}
                         </span>
                       </li>
                     );
@@ -338,7 +360,7 @@ export default async function EditEventPage({
                 </ul>
               ) : (
                 <span className="text-[#1E3A5F]/65">
-                  Add distances below — each distance has its own gun time and entry deadline.
+                  Add distances below — each distance has its own gun time and check-in window.
                 </span>
               )}
             </div>
@@ -346,10 +368,13 @@ export default async function EditEventPage({
         </div>
 
         <section className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Update Schedule</h2>
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">
+            Dates &amp; Online Registration
+          </h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            Change race day or multi-day end date (e.g. postponement). Gun and entry deadlines are set per
-            distance below.
+            Your event dates carry over from when you created the event — only touch them if
+            something changes (e.g. a postponement). Set the online registration window here; gun
+            times and race check-in are set per distance below.
           </p>
           <div className="mt-5">
             <EventScheduleForm
@@ -357,6 +382,7 @@ export default async function EditEventPage({
               raceDate={event.race_date as string}
               endDate={(event as { end_date?: string | null }).end_date ?? null}
               entriesOpenAt={toDatetimeLocalInputValue((event as { entries_open_at?: string | null }).entries_open_at ?? null)}
+              onlineRegClosesAt={toDatetimeLocalInputValue((event as { pr_cutoff?: string | null }).pr_cutoff ?? null)}
               returnTo={`/promoter/events/${id}/edit`}
             />
           </div>
@@ -422,7 +448,7 @@ export default async function EditEventPage({
         <section className="mt-10">
           <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Add Distance</h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            Add a race distance, fees, gun time and entry deadline, Qualifier rules, and pacer
+            Add a race distance, fees, gun time and check-in window, Qualifier rules, and pacer
             options.
           </p>
 
@@ -464,9 +490,12 @@ export default async function EditEventPage({
                 />
               </div>
               <DistanceTierCheckboxes />
-              <GunEntryDeadlineFields
+              <GunCheckInFields
                 defaultGunTime={defaultGunTime}
-                defaultEntryDeadline={defaultEntryDeadline}
+                defaultCheckInOpens={defaultCheckInOpens}
+                defaultCheckInCloses={defaultGunTime}
+                defaultAllowWalkUps={true}
+                defaultWalkUpFeeDollars=""
                 inputClass={inputClass}
               />
 

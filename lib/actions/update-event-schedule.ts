@@ -6,15 +6,15 @@ import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 /**
- * Updates event-level schedule: race day and optional multi-day end date.
- * Gun times and entry deadlines are per distance only.
+ * Updates event-level schedule: event dates and the online registration
+ * window (opens = entries_open_at, closes = pr_cutoff). Gun times and
+ * check-in windows are per distance only.
  * RLS allows the event promoter or a user with the global `admin` role.
  */
 export async function updateEventSchedule(formData: FormData): Promise<void> {
   const eventId = String(formData.get("event_id") ?? "").trim();
   const raceDate = String(formData.get("race_date") ?? "").trim();
   const endDateRaw = String(formData.get("end_date") ?? "").trim();
-  const entriesOpenRaw = String(formData.get("entries_open_at") ?? "").trim();
   const returnTo = String(formData.get("return_to") ?? "").trim();
 
   if (!eventId) {
@@ -24,12 +24,16 @@ export async function updateEventSchedule(formData: FormData): Promise<void> {
     throw new Error("Race day is required");
   }
 
-  const endDate = endDateRaw || null;
-  const entriesOpenAt = (() => {
-    if (!entriesOpenRaw) return null;
-    const d = new Date(entriesOpenRaw);
+  const parseDatetime = (field: string): string | null => {
+    const raw = String(formData.get(field) ?? "").trim();
+    if (!raw) return null;
+    const d = new Date(raw);
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
-  })();
+  };
+
+  const endDate = endDateRaw || null;
+  const entriesOpenAt = parseDatetime("entries_open_at");
+  const onlineRegClosesAt = parseDatetime("online_reg_closes_at");
 
   const supabase = await createServerSupabaseClient();
   const {
@@ -45,6 +49,7 @@ export async function updateEventSchedule(formData: FormData): Promise<void> {
       race_date: raceDate,
       end_date: endDate,
       entries_open_at: entriesOpenAt,
+      pr_cutoff: onlineRegClosesAt,
     })
     .eq("id", eventId);
 

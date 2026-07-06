@@ -6,11 +6,10 @@ import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
 import { StartAidStationsEditorLazy } from "@/components/maps/StartAidStationsEditorLazy";
 import type { CourseGeoJSON } from "@/lib/mapbox/config";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
-import { GunEntryDeadlineFields } from "@/components/promoter/GunEntryDeadlineFields";
+import { GunCheckInFields } from "@/components/promoter/GunCheckInFields";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
 import {
-  datetimeLocalInputValueOrEntryDeadlineFromGun,
   datetimeLocalInputValueOrRaceDayDefault,
   toDatetimeLocalInputValue,
 } from "@/lib/datetime-local";
@@ -81,14 +80,6 @@ export default async function EditDistancePage({
     8,
     0,
   );
-  const entryDeadlineDefault = datetimeLocalInputValueOrEntryDeadlineFromGun(
-    distanceWithExtras.pr_cutoff ?? null,
-    distanceWithExtras.gun_time ?? null,
-    raceDay,
-    8,
-    0,
-    30,
-  );
   const isThisQualifier =
     (distance as { is_peer_racing_qualifier?: boolean }).is_peer_racing_qualifier === true;
   const otherIsQualifier = qualifierDistance && qualifierDistance.id !== distanceId;
@@ -141,11 +132,6 @@ export default async function EditDistancePage({
       gunTimeRaw && String(gunTimeRaw).trim()
         ? new Date(String(gunTimeRaw).trim()).toISOString()
         : null;
-    const prCutoffRaw = formData.get("pr_cutoff");
-    const prCutoff =
-      prCutoffRaw && String(prCutoffRaw).trim()
-        ? new Date(String(prCutoffRaw).trim()).toISOString()
-        : null;
     const isQualifier = formData.get("is_peer_racing_qualifier") === "1";
     const allowRollOverFrom =
       String(formData.get("allow_roll_over_from_qualifier") ?? "").toLowerCase() === "yes";
@@ -191,7 +177,9 @@ export default async function EditDistancePage({
         label,
         race_name: raceName,
         gun_time: gunTime,
-        pr_cutoff: prCutoff,
+        // Entry deadline is retired — online registration closes at the event level;
+        // race-day access is governed by the check-in window + walk-up toggle.
+        pr_cutoff: null,
         is_peer_racing_qualifier: isQualifier,
         allow_roll_over_from_qualifier: isQualifier ? allowRollOverFrom : false,
         allow_qualifier_split_to_roll_over_here: !isQualifier ? allowQualifierRollOverHere : false,
@@ -296,77 +284,14 @@ export default async function EditDistancePage({
               />
             </div>
 
-            <GunEntryDeadlineFields
+            <GunCheckInFields
               defaultGunTime={gunTimeDefault}
-              defaultEntryDeadline={entryDeadlineDefault}
+              defaultCheckInOpens={checkInOpensDefault}
+              defaultCheckInCloses={checkInClosesDefault}
+              defaultAllowWalkUps={logistics.allow_walk_ups !== false}
+              defaultWalkUpFeeDollars={walkUpFeeDollarsDefault}
               inputClass={inputClass}
             />
-
-            <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
-              <p className="font-display text-base font-semibold text-[#1E3A5F]">
-                Race-Day Check-In
-              </p>
-              <p className="mt-2 text-sm leading-relaxed text-[#1E3A5F]/70">
-                When your check-in desk is open for this race.
-                {checkInWindow.derived
-                  ? " Pre-filled to one hour before gun time — adjust as needed."
-                  : ""}
-              </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="check_in_opens_at" className="text-sm font-medium text-[#1E3A5F]">
-                    Check-in opens
-                  </label>
-                  <input
-                    id="check_in_opens_at"
-                    name="check_in_opens_at"
-                    type="datetime-local"
-                    defaultValue={checkInOpensDefault}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="check_in_closes_at" className="text-sm font-medium text-[#1E3A5F]">
-                    Check-in closes
-                  </label>
-                  <input
-                    id="check_in_closes_at"
-                    name="check_in_closes_at"
-                    type="datetime-local"
-                    defaultValue={checkInClosesDefault}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <label className="mt-5 flex cursor-pointer items-center gap-2 text-sm text-[#1E3A5F]">
-                <input
-                  type="checkbox"
-                  name="allow_walk_ups"
-                  value="1"
-                  defaultChecked={logistics.allow_walk_ups !== false}
-                  className="h-4 w-4 rounded border-[#1E3A5F]/30 text-[#E87722] focus:ring-[#E87722]"
-                />
-                Allow walk-up entries (register at the desk on race day)
-              </label>
-              <div className="mt-3">
-                <label htmlFor="walk_up_fee_dollars" className="text-sm font-medium text-[#1E3A5F]">
-                  Race-day entry fee ($){" "}
-                  <span className="font-normal text-[#1E3A5F]/55">
-                    (optional — blank uses the online fee)
-                  </span>
-                </label>
-                <input
-                  id="walk_up_fee_dollars"
-                  name="walk_up_fee_dollars"
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  defaultValue={walkUpFeeDollarsDefault}
-                  className={inputClass}
-                />
-              </div>
-            </div>
 
             <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
               <p className="font-display text-base font-semibold text-[#1E3A5F]">

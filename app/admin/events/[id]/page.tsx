@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EventScheduleForm } from "@/components/events/EventScheduleForm";
+import { toDatetimeLocalInputValue } from "@/lib/datetime-local";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
@@ -17,7 +18,7 @@ export default async function AdminEventDetailPage({ params }: { params: Promise
   const { data: event, error: evError } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,timezone,race_date,end_date,event_type,status,results_published,created_at,promoter_id,artwork_url",
+      "id,name,city,state,timezone,race_date,end_date,event_type,status,results_published,created_at,promoter_id,artwork_url,entries_open_at,pr_cutoff",
     )
     .eq("id", id)
     .maybeSingle();
@@ -131,14 +132,20 @@ export default async function AdminEventDetailPage({ params }: { params: Promise
             <div className="mt-6 border-t border-[#1E3A5F]/10 pt-6">
               <h3 className="text-sm font-semibold text-[#1E3A5F]">Update Schedule</h3>
               <p className="mt-1 text-xs text-[#1E3A5F]/65">
-                Race day and end date (e.g. postponement). Gun and entry deadlines: promoter editor → each
-                distance.
+                Event dates and online registration window (e.g. postponement). Gun times and
+                check-in: promoter editor → each distance.
               </p>
               <div className="mt-4">
                 <EventScheduleForm
                   eventId={event.id as string}
                   raceDate={event.race_date as string}
                   endDate={(event as { end_date?: string | null }).end_date ?? null}
+                  entriesOpenAt={toDatetimeLocalInputValue(
+                    (event as { entries_open_at?: string | null }).entries_open_at ?? null,
+                  )}
+                  onlineRegClosesAt={toDatetimeLocalInputValue(
+                    (event as { pr_cutoff?: string | null }).pr_cutoff ?? null,
+                  )}
                   returnTo={`/admin/events/${id}`}
                   submitLabel="Save schedule"
                 />

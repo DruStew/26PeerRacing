@@ -60,26 +60,6 @@ export function entryDeadlineDatetimeLocalFromGun(
   return formatDateToDatetimeLocal(d);
 }
 
-/** Existing entry deadline, or gun time minus N minutes when unset. */
-export function datetimeLocalInputValueOrEntryDeadlineFromGun(
-  prCutoffIso: string | null | undefined,
-  gunIso: string | null | undefined,
-  raceDate: string | null | undefined,
-  defaultGunHour = 8,
-  defaultGunMinute = 0,
-  minutesBefore = 30,
-): string {
-  const existingCutoff = toDatetimeLocalInputValue(prCutoffIso);
-  if (existingCutoff) return existingCutoff;
-
-  const gunLocal =
-    toDatetimeLocalInputValue(gunIso) ||
-    defaultDatetimeLocalFromRaceDay(raceDate, defaultGunHour, defaultGunMinute);
-  if (!gunLocal) return "";
-
-  return entryDeadlineDatetimeLocalFromGun(gunLocal, minutesBefore);
-}
-
 /**
  * Default `<input type="datetime-local" />` value from a calendar race day (YYYY-MM-DD).
  * Uses local wall time; defaults to 08:00 when hour/minute are omitted.

@@ -168,7 +168,8 @@ export default async function NewEventPage() {
               </select>
             </div>
             <p className="text-xs leading-relaxed text-[#1E3A5F]/60">
-              Gun times and entry deadlines are set per race when you add distances on the next page.
+              Gun times and race check-in windows are set per race when you add distances on the
+              next page.
             </p>
             <button
               type="submit"
