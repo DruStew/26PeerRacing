@@ -52,10 +52,12 @@ export function PromoterRosterClient({ eventId, notCheckedIn, partial, checkedIn
       </section>
 
       <RosterSearchClient
+        eventId={eventId}
         notCheckedIn={notCheckedIn}
         partial={partial}
         checkedIn={checkedIn}
         onManage={handleManage}
+        onBulkDone={() => router.refresh()}
       />
     </>
   );

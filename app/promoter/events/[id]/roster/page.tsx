@@ -38,6 +38,7 @@ type RunnerGroup = {
   key: string;
   userId: string | null;
   entryId: string;
+  entryIds: string[];
   name: string;
   email: string;
   phone: string;
@@ -115,6 +116,7 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
       key,
       userId: list[0].user_id ?? null,
       entryId: list[0].id,
+      entryIds: list.map((e) => e.id),
       name,
       email: prof?.email ?? list[0].email ?? "",
       phone: prof?.phone ?? "",
