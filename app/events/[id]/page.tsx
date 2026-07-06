@@ -114,7 +114,7 @@ export default async function EventPage({
   const { data: distances } = await supabase
     .from("distances")
     .select(
-      "id,label,race_name,gun_time,entry_fee_cents,pr_cutoff,results_published_at,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,packet_pickup_info,additional_notes",
+      "id,label,race_name,gun_time,entry_fee_cents,pr_cutoff,results_published_at,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes",
     )
     .eq("event_id", id)
     .order("gun_time", { ascending: true, nullsFirst: true });

@@ -49,7 +49,7 @@ export default async function EditDistancePage({
   const { data: distance, error: distanceError } = await supabase
     .from("distances")
     .select(
-      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,packet_pickup_info,additional_notes",
+      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes",
     )
     .eq("id", distanceId)
     .eq("event_id", eventId)
@@ -94,6 +94,7 @@ export default async function EditDistancePage({
     start_lat?: number | null;
     start_lng?: number | null;
     course_cutoff_at?: string | null;
+    course_cutoff_text?: string | null;
     packet_pickup_info?: string | null;
     additional_notes?: string | null;
   };
@@ -106,7 +107,16 @@ export default async function EditDistancePage({
   const checkInClosesDefault = toDatetimeLocalInputValue(checkInWindow.closesAt);
   const walkUpFeeDollarsDefault =
     logistics.walk_up_fee_cents != null ? (logistics.walk_up_fee_cents / 100).toFixed(2) : "";
-  const courseCutoffDefault = toDatetimeLocalInputValue(logistics.course_cutoff_at ?? null);
+  // Prefer the free-text cutoff; fall back to a readable version of the legacy timestamp.
+  const courseCutoffDefault =
+    logistics.course_cutoff_text?.trim() ||
+    (logistics.course_cutoff_at
+      ? new Date(logistics.course_cutoff_at).toLocaleString("en-US", {
+          weekday: "short",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : "");
 
   const { data: aidStationsRaw } = await supabase
     .from("aid_stations")
@@ -190,7 +200,9 @@ export default async function EditDistancePage({
         check_in_closes_at: parseDatetime("check_in_closes_at"),
         allow_walk_ups: allowWalkUps,
         walk_up_fee_cents: allowWalkUps ? walkUpFeeCents : null,
-        course_cutoff_at: parseDatetime("course_cutoff_at"),
+        // Free text supersedes the legacy timestamp cutoff.
+        course_cutoff_text: String(formData.get("course_cutoff_text") ?? "").trim() || null,
+        course_cutoff_at: null,
         packet_pickup_info: String(formData.get("packet_pickup_info") ?? "").trim() || null,
         additional_notes: String(formData.get("additional_notes") ?? "").trim() || null,
         ...tierFlags,
@@ -290,38 +302,27 @@ export default async function EditDistancePage({
               defaultCheckInCloses={checkInClosesDefault}
               defaultAllowWalkUps={logistics.allow_walk_ups !== false}
               defaultWalkUpFeeDollars={walkUpFeeDollarsDefault}
+              defaultPacketPickupNotes={logistics.packet_pickup_info ?? ""}
               inputClass={inputClass}
             />
 
             <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
               <p className="font-display text-base font-semibold text-[#1E3A5F]">
-                Course Cutoff & Packet Pickup
+                Race Notes and Additional Info
               </p>
               <div className="mt-4">
-                <label htmlFor="course_cutoff_at" className="text-sm font-medium text-[#1E3A5F]">
+                <label htmlFor="course_cutoff_text" className="text-sm font-medium text-[#1E3A5F]">
                   Course cutoff{" "}
                   <span className="font-normal text-[#1E3A5F]/55">
-                    (optional — final on-course cutoff, mostly for ultras)
+                    (optional — e.g. &quot;14 hours&quot; or &quot;8:00 PM at mile 90&quot;)
                   </span>
                 </label>
                 <input
-                  id="course_cutoff_at"
-                  name="course_cutoff_at"
-                  type="datetime-local"
+                  id="course_cutoff_text"
+                  name="course_cutoff_text"
+                  type="text"
+                  autoComplete="off"
                   defaultValue={courseCutoffDefault}
-                  className={inputClass}
-                />
-              </div>
-              <div className="mt-4">
-                <label htmlFor="packet_pickup_info" className="text-sm font-medium text-[#1E3A5F]">
-                  Packet pickup <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
-                </label>
-                <textarea
-                  id="packet_pickup_info"
-                  name="packet_pickup_info"
-                  rows={3}
-                  defaultValue={logistics.packet_pickup_info ?? ""}
-                  placeholder="Fri 1–6 PM, Sturgis RV Park & Campground. Drop bags due by 6 PM."
                   className={inputClass}
                 />
               </div>

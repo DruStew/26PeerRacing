@@ -182,6 +182,7 @@ export default async function EditEventPage({
         check_in_closes_at: checkInCloses,
         allow_walk_ups: allowWalkUps,
         walk_up_fee_cents: allowWalkUps ? walkUpFeeCents : null,
+        packet_pickup_info: String(formData.get("packet_pickup_info") ?? "").trim() || null,
         is_peer_racing_qualifier: isQualifier,
         allow_roll_over_from_qualifier: isQualifier && allowRollOverFrom,
         allow_qualifier_split_to_roll_over_here: !isQualifier && allowQualifierRollOverHere,

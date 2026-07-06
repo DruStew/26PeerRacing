@@ -16,6 +16,7 @@ export type DistanceLogistics = {
   start_lat?: number | null;
   start_lng?: number | null;
   course_cutoff_at?: string | null;
+  course_cutoff_text?: string | null;
   packet_pickup_info?: string | null;
   additional_notes?: string | null;
 };

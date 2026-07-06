@@ -10,6 +10,7 @@ type Props = {
   defaultCheckInCloses: string;
   defaultAllowWalkUps: boolean;
   defaultWalkUpFeeDollars: string;
+  defaultPacketPickupNotes?: string;
   inputClass: string;
 };
 
@@ -23,6 +24,7 @@ export function GunCheckInFields({
   defaultCheckInCloses,
   defaultAllowWalkUps,
   defaultWalkUpFeeDollars,
+  defaultPacketPickupNotes = "",
   inputClass,
 }: Props) {
   const [gunTime, setGunTime] = useState(defaultGunTime);
@@ -85,6 +87,21 @@ export function GunCheckInFields({
               className={inputClass}
             />
           </div>
+        </div>
+
+        <div className="mt-4">
+          <label htmlFor="packet_pickup_info" className="text-sm font-medium text-[#1E3A5F]">
+            Bib, Check-In, Packet Pickup Notes{" "}
+            <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
+          </label>
+          <textarea
+            id="packet_pickup_info"
+            name="packet_pickup_info"
+            rows={3}
+            defaultValue={defaultPacketPickupNotes}
+            placeholder="Packet pickup Fri 1–6 PM at the pavilion. Bring your ID for bib pickup."
+            className={inputClass}
+          />
         </div>
 
         <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm text-[#1E3A5F]">

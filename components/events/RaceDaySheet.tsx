@@ -90,7 +90,11 @@ export function RaceDaySheet({
           const rows: Array<{ icon: string; label: string; value: React.ReactNode }> = [];
 
           if (d.packet_pickup_info?.trim()) {
-            rows.push({ icon: "📦", label: "Packet pickup", value: d.packet_pickup_info.trim() });
+            rows.push({
+              icon: "📦",
+              label: "Bib & packet pickup",
+              value: d.packet_pickup_info.trim(),
+            });
           }
           if (checkIn) {
             rows.push({ icon: "✅", label: "Check-in", value: checkIn });
@@ -138,8 +142,11 @@ export function RaceDaySheet({
                 .join(" · "),
             });
           }
-          if (d.course_cutoff_at) {
-            rows.push({ icon: "⏱️", label: "Course cutoff", value: fmtDayTime(d.course_cutoff_at) });
+          const courseCutoff =
+            d.course_cutoff_text?.trim() ||
+            (d.course_cutoff_at ? fmtDayTime(d.course_cutoff_at) : null);
+          if (courseCutoff) {
+            rows.push({ icon: "⏱️", label: "Course cutoff", value: courseCutoff });
           }
 
           return (
