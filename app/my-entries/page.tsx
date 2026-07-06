@@ -145,8 +145,12 @@ export default async function MyEntriesPage() {
             changes you need.
           </p>
           <p>
-            Once online registration closes, if you need to withdraw, please check in on race day or
-            contact the race promoter.
+            Once online registration closes, if you need to withdraw, please check in on race day or{" "}
+            <Link href={DEFAULT_PUBLIC_ROUTE} className="font-semibold text-[#E87722] underline-offset-2 hover:underline">
+              open the event page
+            </Link>{" "}
+            and use <span className="font-semibold text-[#1E3A5F]">Questions about this race?</span> to message the
+            organizer.
           </p>
         </div>
 
@@ -198,12 +202,22 @@ export default async function MyEntriesPage() {
                         </span>
                       )}
                     </div>
-                    <Link
-                      href={`/events/${ev.id}`}
-                      className="text-sm font-semibold text-[#E87722] underline-offset-2 hover:underline"
-                    >
-                      Event details
-                    </Link>
+                    <div className="flex flex-col items-start gap-2 sm:items-end">
+                      <Link
+                        href={`/events/${ev.id}`}
+                        className="text-sm font-semibold text-[#E87722] underline-offset-2 hover:underline"
+                      >
+                        Event details
+                      </Link>
+                      {ev.status === "published" && !isPast ? (
+                        <Link
+                          href={`/events/${ev.id}#contact`}
+                          className="text-sm font-semibold text-[#1E3A5F]/80 underline-offset-2 hover:text-[#E87722] hover:underline"
+                        >
+                          Contact organizer
+                        </Link>
+                      ) : null}
+                    </div>
                   </div>
 
                   <ul className="mt-4 space-y-4">

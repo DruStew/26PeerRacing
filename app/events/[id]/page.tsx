@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { FlyerLightbox } from "@/components/events/FlyerLightbox";
+import { EventContactSection } from "@/components/events/EventContactSection";
 import { EventEnterButton } from "@/components/events/EventEnterButton";
 import { EventVenueDirections } from "@/components/events/EventVenueDirections";
 import { ShareRaceButton } from "@/components/events/ShareRaceButton";
@@ -100,7 +101,7 @@ export default async function EventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links",
+      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name",
     )
     .eq("id", id)
     .single();
@@ -178,6 +179,29 @@ export default async function EventPage({
     location,
     entriesOpen,
   });
+
+  const eventStatus = (event as { status?: string }).status;
+  const isDemo = (event as { is_demo?: boolean }).is_demo === true;
+  const showContactForm = eventStatus === "published" && !isDemo;
+  const organizerContactName =
+    (event as { organizer_contact_name?: string | null }).organizer_contact_name ?? null;
+
+  let defaultSenderName = "";
+  let defaultSenderEmail = "";
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("first_name,last_name,email")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profile) {
+      const p = profile as { first_name?: string | null; last_name?: string | null; email?: string | null };
+      defaultSenderName = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+      defaultSenderEmail = p.email?.trim() ?? user.email ?? "";
+    } else {
+      defaultSenderEmail = user.email ?? "";
+    }
+  }
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
@@ -276,6 +300,16 @@ export default async function EventPage({
           raceDayNotes={raceDayNotes}
           raceDayLinks={raceDayLinks}
         />
+
+        {showContactForm ? (
+          <EventContactSection
+            eventId={event.id}
+            eventName={event.name}
+            organizerContactName={organizerContactName}
+            defaultSenderName={defaultSenderName}
+            defaultSenderEmail={defaultSenderEmail}
+          />
+        ) : null}
 
         {distanceRows.length > 0 ? (
           <section className="mt-10">

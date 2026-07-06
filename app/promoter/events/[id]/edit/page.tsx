@@ -13,6 +13,7 @@ import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 import { EventScheduleForm } from "@/components/events/EventScheduleForm";
+import { OrganizerContactForm } from "@/components/promoter/OrganizerContactForm";
 import { DeleteEventSection } from "@/components/promoter/DeleteEventSection";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
 import { GunEntryDeadlineFields } from "@/components/promoter/GunEntryDeadlineFields";
@@ -51,7 +52,7 @@ export default async function EditEventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo",
+      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo,organizer_contact_name,organizer_contact_email",
     )
     .eq("id", id)
     .single();
@@ -65,6 +66,13 @@ export default async function EditEventPage({
   if (!allowed) {
     notFound();
   }
+
+  const { data: promoterProfile } = await supabase
+    .from("profiles")
+    .select("email")
+    .eq("id", eventPromoterId)
+    .maybeSingle();
+  const defaultPromoterEmail = (promoterProfile as { email?: string | null } | null)?.email?.trim() ?? null;
 
   const page = Math.max(1, Number(resolvedSearchParams.page ?? "1"));
   const from = (page - 1) * PAGE_SIZE;
@@ -347,6 +355,23 @@ export default async function EditEventPage({
               eventId={event.id}
               raceDate={event.race_date as string}
               endDate={(event as { end_date?: string | null }).end_date ?? null}
+              returnTo={`/promoter/events/${id}/edit`}
+            />
+          </div>
+        </section>
+
+        <section className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm sm:p-8">
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Race contact</h2>
+          <p className="mt-1 text-sm text-[#1E3A5F]/70">
+            Runners use a contact form on your public event page once the event is published. Your email stays
+            private.
+          </p>
+          <div className="mt-5">
+            <OrganizerContactForm
+              eventId={event.id}
+              organizerContactName={(event as { organizer_contact_name?: string | null }).organizer_contact_name ?? null}
+              organizerContactEmail={(event as { organizer_contact_email?: string | null }).organizer_contact_email ?? null}
+              defaultPromoterEmail={defaultPromoterEmail}
               returnTo={`/promoter/events/${id}/edit`}
             />
           </div>
