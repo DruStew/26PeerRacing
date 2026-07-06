@@ -17,7 +17,7 @@ import {
   type CourseGeoJSON,
 } from "@/lib/mapbox/config";
 import { DEFAULT_PUBLIC_ROUTE, MY_ENTRIES_ROUTE } from "@/lib/routes";
-import { areEntriesOpenForEvent } from "@/lib/event-entry-status";
+import { areEntriesOpenForEvent, finalDayIsOver } from "@/lib/event-entry-status";
 import { buildEventShareText, eventPageMetadata } from "@/lib/event-share";
 import { distanceTierRequirementLabel } from "@/lib/membership-tiers";
 import { formatDistanceDisplay } from "@/lib/distance-display";
@@ -102,7 +102,7 @@ export default async function EventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name,entries_open_at,pr_cutoff",
+      "id,name,city,state,race_date,end_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name,entries_open_at,pr_cutoff",
     )
     .eq("id", id)
     .single();
@@ -129,6 +129,17 @@ export default async function EventPage({
         (d as { results_published_at?: string | null }).results_published_at ?? null,
     })),
   );
+  const walkUpsStillAvailable =
+    !entriesOpen &&
+    !finalDayIsOver({
+      race_date: event.race_date as string | null,
+      end_date: (event as { end_date?: string | null }).end_date ?? null,
+    }) &&
+    distanceRows.some(
+      (d) =>
+        !(d as { results_published_at?: string | null }).results_published_at &&
+        (d as { allow_walk_ups?: boolean | null }).allow_walk_ups !== false,
+    );
 
   const location = [event.city, event.state].filter(Boolean).join(", ") || "—";
   const artworkUrl = (event as { artwork_url?: string | null }).artwork_url ?? null;
@@ -514,13 +525,21 @@ export default async function EventPage({
               ) : null}
             </>
           ) : (
-            <span
-              className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-[#1E3A5F]/15 bg-[#1E3A5F]/08 px-6 py-3 text-sm font-semibold text-[#1E3A5F]/40"
-              aria-disabled="true"
-              title="Online registration has closed for this event"
-            >
-              Enter race
-            </span>
+            <>
+              <span
+                className="inline-flex cursor-not-allowed items-center justify-center rounded-md border border-[#1E3A5F]/15 bg-[#1E3A5F]/08 px-6 py-3 text-sm font-semibold text-[#1E3A5F]/40"
+                aria-disabled="true"
+                title="Online registration has closed for this event"
+              >
+                Enter race
+              </span>
+              {walkUpsStillAvailable ? (
+                <p className="text-sm font-medium text-[#1E3A5F]/80">
+                  Online registration has closed — walk-up entries are available at race-day
+                  check-in. See the check-in window above.
+                </p>
+              ) : null}
+            </>
           )}
           <Link
             href={DEFAULT_PUBLIC_ROUTE}

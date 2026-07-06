@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { FlyerLightbox } from "@/components/events/FlyerLightbox";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { areEntriesOpenForEvent } from "@/lib/event-entry-status";
+import { areEntriesOpenForEvent, finalDayIsOver } from "@/lib/event-entry-status";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
@@ -41,6 +41,7 @@ type DistanceRow = {
   sort_order: number | null;
   pr_cutoff: string | null;
   results_published_at: string | null;
+  allow_walk_ups?: boolean | null;
 };
 
 function sortDistancesForDisplay(distances: DistanceRow[]): DistanceRow[] {
@@ -84,11 +85,13 @@ export default async function EventsPage({
   const page = Math.max(1, Number(resolvedSearchParams.page ?? "1"));
   const from = (page - 1) * PAGE_SIZE;
 
-  // Find a Race = upcoming / still-open races only. Fully-published events fall
-  // off here (entries closed) and surface on the public Race Results index.
+  // Find a Race lists every published event through the end of its final race
+  // day (walk-ups can still enter at the desk after online reg closes). Events
+  // fall off after the final day — or earlier once all results are published —
+  // and surface on the public Race Results index instead.
   const { data: events } = await supabaseServer
     .from("events")
-    .select("id,name,city,state,race_date,pr_cutoff")
+    .select("id,name,city,state,race_date,end_date,pr_cutoff")
     .eq("status", "published")
     .order("race_date", { ascending: true });
 
@@ -99,7 +102,7 @@ export default async function EventsPage({
   if (allEventIds.length > 0) {
     const { data: distanceRows } = await supabaseServer
       .from("distances")
-      .select("id,event_id,label,race_name,sort_order,pr_cutoff,results_published_at")
+      .select("id,event_id,label,race_name,sort_order,pr_cutoff,results_published_at,allow_walk_ups")
       .in("event_id", allEventIds);
 
     for (const row of distanceRows ?? []) {
@@ -110,12 +113,12 @@ export default async function EventsPage({
     }
   }
 
-  const openEvents = allEvents.filter((e) =>
-    areEntriesOpenForEvent(
-      (e as { pr_cutoff?: string | null }).pr_cutoff ?? null,
-      distancesByEvent.get(e.id) ?? [],
-    ),
-  );
+  const openEvents = allEvents.filter((e) => {
+    if (finalDayIsOver(e as { race_date: string | null; end_date?: string | null })) return false;
+    const dists = distancesByEvent.get(e.id) ?? [];
+    const allPublished = dists.length > 0 && dists.every((d) => d.results_published_at);
+    return !allPublished;
+  });
 
   const totalPages = Math.max(1, Math.ceil(openEvents.length / PAGE_SIZE));
   const list = openEvents.slice(from, from + PAGE_SIZE);
@@ -196,6 +199,9 @@ export default async function EventsPage({
                 const eventPrCutoff = (event as { pr_cutoff?: string | null }).pr_cutoff ?? null;
                 const listDeadline = earliestOnlineRegClose(eventPrCutoff, distances);
                 const entriesOpen = areEntriesOpenForEvent(eventPrCutoff, distances);
+                const walkUpsAvailable =
+                  !entriesOpen &&
+                  distances.some((d) => !d.results_published_at && d.allow_walk_ups !== false);
                 const dCounts = countByEventDistance.get(event.id);
                 const artworkUrl = (event as { artwork_url?: string | null }).artwork_url ?? null;
 
@@ -203,7 +209,7 @@ export default async function EventsPage({
                   <li key={event.id}>
                     <div
                       className={`flex flex-col gap-4 rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md sm:flex-row sm:items-start sm:justify-between ${
-                        entriesOpen
+                        entriesOpen || walkUpsAvailable
                           ? "border-[#1E3A5F]/10 hover:border-[#E87722]/50"
                           : "border-[#1E3A5F]/15 bg-[#fafbfc] hover:border-[#1E3A5F]/25"
                       }`}
@@ -227,6 +233,10 @@ export default async function EventsPage({
                             {entriesOpen ? (
                               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-600/15">
                                 Entries open
+                              </span>
+                            ) : walkUpsAvailable ? (
+                              <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-600/20">
+                                Walk-ups on race day
                               </span>
                             ) : (
                               <span className="inline-flex items-center rounded-full bg-[#1E3A5F]/08 px-2 py-0.5 text-xs font-medium text-[#1E3A5F]/80 ring-1 ring-[#1E3A5F]/15">
