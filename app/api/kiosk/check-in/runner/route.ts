@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { authKioskOrPromoterForEvent } from "@/lib/kiosk/auth-kiosk-or-promoter-event";
+import { loadDemoRunnerContext } from "@/lib/kiosk/load-demo-runner";
+import { loadEventIsDemo } from "@/lib/demo/event";
 import { filterEntriesForProfile } from "@/lib/kiosk/match-profile-entries";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { isMembershipActive, membershipTierFromRow, type MembershipRow } from "@/lib/membership";
@@ -49,6 +51,14 @@ export async function POST(request: Request) {
   const auth = await authKioskOrPromoterForEvent(request, eventId);
   if (!auth.ok) {
     return auth.response;
+  }
+
+  const isDemoEvent = await loadEventIsDemo(auth.admin, eventId);
+  if (isDemoEvent && entryId) {
+    const demoPayload = await loadDemoRunnerContext(auth.admin, eventId, entryId);
+    if (demoPayload) {
+      return NextResponse.json(demoPayload);
+    }
   }
 
   // Tapped row: resolve runner from the entry id first so we never trust a stale/wrong user_id from search alone.

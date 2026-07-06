@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { DemoEventBanner } from "@/components/demo/DemoEventBanner";
+
 const TABS = [
   { key: "edit", label: "Manage Race", path: "edit" },
   { key: "roster", label: "Check-In Roster", path: "roster" },
@@ -11,9 +13,23 @@ const TABS = [
 export type EventNavTab = (typeof TABS)[number]["key"];
 
 /** Quick-jump buttons between the promoter tools for one event. */
-export function EventNav({ eventId, current }: { eventId: string; current: EventNavTab }) {
+export function EventNav({
+  eventId,
+  current,
+  isDemo = false,
+}: {
+  eventId: string;
+  current: EventNavTab;
+  isDemo?: boolean;
+}) {
   return (
-    <nav className="mt-5 flex flex-wrap gap-2" aria-label="Event tools">
+    <>
+      {isDemo ? (
+        <div className="mt-5">
+          <DemoEventBanner eventId={eventId} />
+        </div>
+      ) : null}
+      <nav className="mt-5 flex flex-wrap gap-2" aria-label="Event tools">
       {TABS.map((t) => {
         const active = t.key === current;
         return (
@@ -32,5 +48,6 @@ export function EventNav({ eventId, current }: { eventId: string; current: Event
         );
       })}
     </nav>
+    </>
   );
 }

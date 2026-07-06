@@ -23,7 +23,7 @@ export default async function PromoterKioskPage({ params }: { params: Promise<{ 
 
   const { data: event, error } = await supabase
     .from("events")
-    .select("id,name,promoter_id")
+    .select("id,name,promoter_id,is_demo")
     .eq("id", id)
     .single();
 
@@ -53,7 +53,7 @@ export default async function PromoterKioskPage({ params }: { params: Promise<{ 
           ← Edit event
         </Link>
 
-        <EventNav eventId={id} current="kiosk" />
+        <EventNav eventId={id} current="kiosk" isDemo={(event as { is_demo?: boolean }).is_demo === true} />
 
         <p className="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race Day</p>
         <h1 className="font-display mt-2 text-3xl font-bold text-[#1E3A5F]">Kiosk &amp; Terminals</h1>

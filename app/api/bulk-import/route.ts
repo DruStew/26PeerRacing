@@ -8,6 +8,7 @@ import {
   type CsvRowInput,
 } from "@/lib/bulk-import/engine";
 import { canUserBulkImportForEvent } from "@/lib/bulk-import/scope";
+import { loadEventIsDemo } from "@/lib/demo/event";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
@@ -77,6 +78,16 @@ export async function POST(request: Request) {
 
   if (evErr || !eventRow) {
     return NextResponse.json({ ok: false, error: "Event not found." }, { status: 404 });
+  }
+
+  if (await loadEventIsDemo(supabase, eventId)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Demo events use Admin → Demo races → Import participants (no accounts or memberships).",
+      },
+      { status: 400 },
+    );
   }
 
   const { data: distRows, error: dErr } = await supabase

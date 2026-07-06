@@ -59,6 +59,7 @@ export function ResultsConsoleClient({
   const [registeredEntryCount, setRegisteredEntryCount] = useState(0);
   const [importedRowCount, setImportedRowCount] = useState(0);
   const [resultsPublishedAt, setResultsPublishedAt] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
 
   const [minPercentile, setMinPercentile] = useState(5);
   const [maxPercentile, setMaxPercentile] = useState(95);
@@ -108,6 +109,7 @@ export function ResultsConsoleClient({
         importedRowCount?: number;
         registeredEntryCount?: number;
         resultsPublishedAt?: string | null;
+        isDemo?: boolean;
       };
       if (!dataRes.ok || !dataJson.ok) {
         setLoadError(dataJson.error ?? "Could not load imported finish times");
@@ -117,6 +119,7 @@ export function ResultsConsoleClient({
       setImportedRowCount(dataJson.importedRowCount ?? 0);
       setRegisteredEntryCount(dataJson.registeredEntryCount ?? 0);
       setResultsPublishedAt(dataJson.resultsPublishedAt ?? null);
+      setIsDemo(dataJson.isDemo === true);
     } catch {
       if (!opts?.quiet) setLoadError("Network error");
     } finally {
@@ -593,6 +596,18 @@ export function ResultsConsoleClient({
           />
 
           {/* publish */}
+          {isDemo ? (
+            <section className="rounded-xl border border-violet-200 bg-violet-50 p-6">
+              <p className="font-display text-base font-semibold text-violet-950">
+                Results preview only — {selectedLabel}
+              </p>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-violet-900/90">
+                This is a demo race. Divisions and payout math above are live from your finish times and payout
+                settings — exactly what a producer would see before publish — but nothing is written to official
+                results, badges, or wallets. Delete the demo when the walkthrough is done.
+              </p>
+            </section>
+          ) : (
           <section className="rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -657,6 +672,7 @@ export function ResultsConsoleClient({
               </p>
             ) : null}
           </section>
+          )}
         </>
       ) : null}
     </div>

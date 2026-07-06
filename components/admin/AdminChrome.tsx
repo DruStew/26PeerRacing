@@ -10,6 +10,8 @@ const nav = [
   { name: "Communications", href: "/admin/comms" },
 ] as const;
 
+const superAdminNav = [{ name: "Demo races", href: "/admin/demo-races" }] as const;
+
 export function AdminChrome({
   children,
   badge = "Admin",
@@ -48,6 +50,17 @@ export function AdminChrome({
                 {item.name}
               </Link>
             ))}
+            {badge === "Super Admin"
+              ? superAdminNav.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="font-semibold text-violet-800 transition-colors hover:text-[#E87722]"
+                  >
+                    {item.name}
+                  </Link>
+                ))
+              : null}
           </nav>
         </div>
       </header>

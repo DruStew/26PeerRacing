@@ -57,7 +57,7 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
     redirect(`/login?returnUrl=${encodeURIComponent(`/promoter/events/${id}/roster`)}`);
   }
 
-  const { data: event, error } = await supabase.from("events").select("id,name,promoter_id").eq("id", id).single();
+  const { data: event, error } = await supabase.from("events").select("id,name,promoter_id,is_demo").eq("id", id).single();
   if (error || !event) notFound();
 
   if (!(await canManageEvent(supabase, auth.user.id, (event as { promoter_id?: string }).promoter_id))) {
@@ -156,7 +156,7 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
           Back to event
         </Link>
 
-        <EventNav eventId={id} current="roster" />
+        <EventNav eventId={id} current="roster" isDemo={(event as { is_demo?: boolean }).is_demo === true} />
 
         <div className="mt-6 border-b border-[#1E3A5F]/10 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race day</p>

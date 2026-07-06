@@ -8,6 +8,8 @@ type Props = {
   eventName: string;
   entryCount: number;
   publishedDistanceCount: number;
+  deleteRedirect?: string;
+  demoMode?: boolean;
 };
 
 export function DeleteEventSection({
@@ -15,6 +17,8 @@ export function DeleteEventSection({
   eventName,
   entryCount,
   publishedDistanceCount,
+  deleteRedirect = "/promoter",
+  demoMode = false,
 }: Props) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
@@ -61,7 +65,7 @@ export function DeleteEventSection({
         setError(json.error ?? `Error ${res.status}`);
         return;
       }
-      router.push("/promoter");
+      router.push(deleteRedirect);
       router.refresh();
     } catch {
       setError("Network error. Try again.");
@@ -73,10 +77,13 @@ export function DeleteEventSection({
   return (
     <>
       <section className="mt-8 rounded-xl border border-red-200/80 bg-red-50/40 p-6 sm:p-8">
-        <h2 className="font-display text-lg font-semibold text-red-900">Delete Event</h2>
+        <h2 className="font-display text-lg font-semibold text-red-900">
+          {demoMode ? "Delete demo race" : "Delete Event"}
+        </h2>
         <p className="mt-2 text-sm leading-relaxed text-red-950/80">
-          Permanently remove this race and all related data — distances, entries, results, badges,
-          kiosk settings, and payout records. This cannot be undone.
+          {demoMode
+            ? "Removes this demo and all entries, times, and payout settings. Nothing was published or paid out."
+            : "Permanently remove this race and all related data — distances, entries, results, badges, kiosk settings, and payout records. This cannot be undone."}
         </p>
         <button
           type="button"

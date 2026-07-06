@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { DemoEventBanner } from "@/components/demo/DemoEventBanner";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import {
   defaultDatetimeLocalFromRaceDay,
@@ -19,6 +20,7 @@ import { VenuePickerLazy } from "@/components/maps/VenuePickerLazy";
 import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
 import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { canManageEvent } from "@/lib/promoter/event-access";
+import { DEMO_EVENT_PUBLISH_BLOCKED } from "@/lib/demo/event";
 
 import { EventArtworkSection } from "./EventArtworkSection";
 
@@ -49,7 +51,7 @@ export default async function EditEventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id",
+      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo",
     )
     .eq("id", id)
     .single();
@@ -181,6 +183,11 @@ export default async function EditEventPage({
       redirect(`/login?returnUrl=${encodeURIComponent(`/promoter/events/${id}/edit`)}`);
     }
 
+    const { data: ev } = await supabase.from("events").select("is_demo").eq("id", id).maybeSingle();
+    if ((ev as { is_demo?: boolean } | null)?.is_demo) {
+      throw new Error(DEMO_EVENT_PUBLISH_BLOCKED);
+    }
+
     const { error: updateError } = await supabase
       .from("events")
       .update({ status: "published" })
@@ -195,6 +202,7 @@ export default async function EditEventPage({
 
   const location = [event.city, event.state].filter(Boolean).join(", ") || "—";
   const published = event.status === "published";
+  const isDemo = (event as { is_demo?: boolean }).is_demo === true;
   const raceDay = event.race_date as string | null;
   const defaultGunTime = defaultDatetimeLocalFromRaceDay(raceDay, 8, 0);
   const defaultEntryDeadline = entryDeadlineDatetimeLocalFromGun(defaultGunTime, 30);
@@ -214,6 +222,12 @@ export default async function EditEventPage({
           Promoter Dashboard
         </Link>
 
+        {isDemo ? (
+          <div className="mt-6">
+            <DemoEventBanner eventId={id} />
+          </div>
+        ) : null}
+
         <div className="mt-6 flex flex-wrap items-start justify-between gap-4 border-b border-[#1E3A5F]/10 pb-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">
@@ -228,6 +242,10 @@ export default async function EditEventPage({
                 <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-600/15">
                   Published
                 </span>
+              ) : isDemo ? (
+                <span className="inline-flex rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-900 ring-1 ring-violet-600/15">
+                  Demo sandbox
+                </span>
               ) : (
                 <span className="inline-flex rounded-full bg-[#1E3A5F]/08 px-2.5 py-0.5 text-xs font-medium text-[#1E3A5F]/80 ring-1 ring-[#1E3A5F]/15">
                   {event.status}
@@ -236,12 +254,14 @@ export default async function EditEventPage({
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-            <Link
-              href={`/events/${event.id}`}
-              className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
-            >
-              View public page
-            </Link>
+            {!isDemo ? (
+              <Link
+                href={`/events/${event.id}`}
+                className="inline-flex items-center justify-center rounded-md border border-[#1E3A5F]/20 px-4 py-2 text-sm font-semibold text-[#1E3A5F] transition-colors hover:border-[#E87722] hover:text-[#E87722]"
+              >
+                View public page
+              </Link>
+            ) : null}
             <Link
               href={`/promoter/events/${id}/kiosk`}
               className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#E87722]/90"
@@ -604,7 +624,12 @@ export default async function EditEventPage({
         </section>
 
         <section className="mt-12 rounded-xl border border-[#E87722]/25 bg-[#fafbfc] p-6 sm:p-8">
-          {published ? (
+          {isDemo ? (
+            <>
+              <p className="text-sm font-medium text-violet-900">Demo race — not on the public calendar</p>
+              <p className="mt-2 text-sm text-[#1E3A5F]/75">{DEMO_EVENT_PUBLISH_BLOCKED}</p>
+            </>
+          ) : published ? (
             <p className="text-sm font-medium text-emerald-800">
               This event is live on the public upcoming races list.
             </p>
@@ -614,14 +639,16 @@ export default async function EditEventPage({
               other settings).
             </p>
           )}
-          <form action={publishEvent} className="mt-4">
-            <button
-              type="submit"
-              className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#E87722]/90"
-            >
-              {published ? "Publish again (refresh)" : "Publish event"}
-            </button>
-          </form>
+          {!isDemo ? (
+            <form action={publishEvent} className="mt-4">
+              <button
+                type="submit"
+                className="inline-flex items-center justify-center rounded-md bg-[#E87722] px-5 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#E87722]/90"
+              >
+                {published ? "Publish again (refresh)" : "Publish event"}
+              </button>
+            </form>
+          ) : null}
         </section>
 
         <DeleteEventSection
@@ -629,6 +656,8 @@ export default async function EditEventPage({
           eventName={event.name}
           entryCount={entryCount ?? 0}
           publishedDistanceCount={publishedDistanceCount ?? 0}
+          deleteRedirect={isDemo ? "/admin/demo-races" : "/promoter"}
+          demoMode={isDemo}
         />
       </main>
     </div>

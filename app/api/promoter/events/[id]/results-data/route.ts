@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { loadFinishersForDistance } from "@/lib/results-console/finishers";
+import { loadEventIsDemo } from "@/lib/demo/event";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
@@ -61,6 +62,8 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
 
   const { finishers, importedRowCount } = await loadFinishersForDistance(service, eventId, distanceId);
 
+  const isDemo = await loadEventIsDemo(service, eventId);
+
   const { count: registeredEntryCount } = await service
     .from("entries")
     .select("id", { count: "exact", head: true })
@@ -73,5 +76,6 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     importedRowCount,
     registeredEntryCount: registeredEntryCount ?? 0,
     resultsPublishedAt: (dist as { results_published_at: string | null }).results_published_at,
+    isDemo,
   });
 }

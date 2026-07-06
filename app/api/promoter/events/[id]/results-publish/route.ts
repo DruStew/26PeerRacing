@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { computeConsoleResults, MIN_FINISHERS } from "@/lib/results-console/compute";
 import { loadFinishersForDistance, type FinisherRow } from "@/lib/results-console/finishers";
+import { DEMO_PUBLISH_BLOCKED, loadEventIsDemo } from "@/lib/demo/event";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
@@ -81,6 +82,13 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const service = createServiceRoleSupabaseClient();
   if (!service) {
     return NextResponse.json({ ok: false, error: "Server is missing SUPABASE_SERVICE_ROLE_KEY." }, { status: 503 });
+  }
+
+  if (await loadEventIsDemo(service, eventId)) {
+    return NextResponse.json(
+      { ok: false, error: DEMO_PUBLISH_BLOCKED, code: "demo_event" },
+      { status: 403 },
+    );
   }
 
   let body: {

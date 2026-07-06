@@ -17,7 +17,7 @@ export default async function EventPayoutPage({ params }: { params: Promise<{ id
 
   const { data: event, error } = await supabase
     .from("events")
-    .select("id,name,promoter_id")
+    .select("id,name,promoter_id,is_demo")
     .eq("id", id)
     .single();
 
@@ -57,7 +57,7 @@ export default async function EventPayoutPage({ params }: { params: Promise<{ id
           Back to event
         </Link>
 
-        <EventNav eventId={id} current="payout" />
+        <EventNav eventId={id} current="payout" isDemo={(event as { is_demo?: boolean }).is_demo === true} />
 
         <div className="mt-6 border-b border-[#1E3A5F]/10 pb-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

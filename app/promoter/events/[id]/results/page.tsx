@@ -21,7 +21,7 @@ export default async function EventResultsConsolePage({
 
   const { data: event, error } = await supabase
     .from("events")
-    .select("id,name,promoter_id")
+    .select("id,name,promoter_id,is_demo")
     .eq("id", id)
     .single();
 
@@ -61,7 +61,7 @@ export default async function EventResultsConsolePage({
           Back to event
         </Link>
 
-        <EventNav eventId={id} current="results" />
+        <EventNav eventId={id} current="results" isDemo={(event as { is_demo?: boolean }).is_demo === true} />
 
         <div className="mt-6 border-b border-[#1E3A5F]/10 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A5F]/60">Race night</p>
