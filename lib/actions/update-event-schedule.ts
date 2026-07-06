@@ -14,6 +14,7 @@ export async function updateEventSchedule(formData: FormData): Promise<void> {
   const eventId = String(formData.get("event_id") ?? "").trim();
   const raceDate = String(formData.get("race_date") ?? "").trim();
   const endDateRaw = String(formData.get("end_date") ?? "").trim();
+  const entriesOpenRaw = String(formData.get("entries_open_at") ?? "").trim();
   const returnTo = String(formData.get("return_to") ?? "").trim();
 
   if (!eventId) {
@@ -24,6 +25,11 @@ export async function updateEventSchedule(formData: FormData): Promise<void> {
   }
 
   const endDate = endDateRaw || null;
+  const entriesOpenAt = (() => {
+    if (!entriesOpenRaw) return null;
+    const d = new Date(entriesOpenRaw);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  })();
 
   const supabase = await createServerSupabaseClient();
   const {
@@ -38,6 +44,7 @@ export async function updateEventSchedule(formData: FormData): Promise<void> {
     .update({
       race_date: raceDate,
       end_date: endDate,
+      entries_open_at: entriesOpenAt,
     })
     .eq("id", eventId);
 

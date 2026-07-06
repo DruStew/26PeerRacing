@@ -164,7 +164,7 @@ export async function POST(request: Request) {
   const { data: allDistancesRaw } = await admin
     .from("distances")
     .select(
-      "id,label,pr_cutoff,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_free_tier,allow_pr_team_tier,allow_top_tier",
+      "id,label,pr_cutoff,entry_fee_cents,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_free_tier,allow_pr_team_tier,allow_top_tier,allow_walk_ups",
     )
     .eq("event_id", eventId);
 
@@ -175,6 +175,13 @@ export async function POST(request: Request) {
   for (const id of primaryDistanceIds) {
     if (!validDistanceIds.has(id)) {
       return NextResponse.json({ ok: false, error: "Invalid distance for this event" }, { status: 400 });
+    }
+    const dist = distById.get(id);
+    if ((dist as { allow_walk_ups?: boolean | null } | undefined)?.allow_walk_ups === false) {
+      return NextResponse.json(
+        { ok: false, error: `${dist?.label ?? "Race"} does not allow walk-up entries on race day.` },
+        { status: 403 },
+      );
     }
   }
 

@@ -7,6 +7,8 @@ type Props = {
   eventId: string;
   raceDate: string | null;
   endDate: string | null;
+  /** Optional registration window start (datetime-local value). */
+  entriesOpenAt?: string | null;
   returnTo: string;
   /** e.g. "Save schedule" */
   submitLabel?: string;
@@ -19,11 +21,13 @@ export function EventScheduleForm({
   eventId,
   raceDate,
   endDate,
+  entriesOpenAt,
   returnTo,
   submitLabel = "Save schedule",
 }: Props) {
   const raceDateValue = raceDate?.trim() ?? "";
   const endDateValue = endDate?.trim() ?? "";
+  const entriesOpenValue = entriesOpenAt?.trim() ?? "";
 
   return (
     <form action={updateEventSchedule} className="space-y-4">
@@ -56,6 +60,24 @@ export function EventScheduleForm({
             className={inputClass}
           />
         </div>
+      </div>
+
+      <div>
+        <label htmlFor={`entries_open_${eventId}`} className="text-sm font-medium text-[#1E3A5F]">
+          Registration opens{" "}
+          <span className="font-normal text-[#1E3A5F]/55">(optional — blank means open now)</span>
+        </label>
+        <input
+          id={`entries_open_${eventId}`}
+          name="entries_open_at"
+          type="datetime-local"
+          defaultValue={entriesOpenValue}
+          className={inputClass}
+        />
+        <p className="mt-1 text-xs text-[#1E3A5F]/55">
+          Before this date the public page shows &quot;Registration opens …&quot; and online entries
+          are blocked.
+        </p>
       </div>
 
       <p className="text-xs leading-relaxed text-[#1E3A5F]/60">

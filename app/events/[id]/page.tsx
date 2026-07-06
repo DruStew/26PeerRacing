@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { FlyerLightbox } from "@/components/events/FlyerLightbox";
 import { EventContactSection } from "@/components/events/EventContactSection";
 import { EventEnterButton } from "@/components/events/EventEnterButton";
+import { RaceDaySheet, type RaceDaySheetDistance } from "@/components/events/RaceDaySheet";
 import { EventVenueDirections } from "@/components/events/EventVenueDirections";
 import { ShareRaceButton } from "@/components/events/ShareRaceButton";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
@@ -101,7 +102,7 @@ export default async function EventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name",
+      "id,name,city,state,race_date,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,status,is_demo,organizer_contact_name,entries_open_at",
     )
     .eq("id", id)
     .single();
@@ -112,7 +113,9 @@ export default async function EventPage({
 
   const { data: distances } = await supabase
     .from("distances")
-    .select("id,label,race_name,gun_time,entry_fee_cents,pr_cutoff,results_published_at,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier")
+    .select(
+      "id,label,race_name,gun_time,entry_fee_cents,pr_cutoff,results_published_at,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,packet_pickup_info,additional_notes",
+    )
     .eq("event_id", id)
     .order("gun_time", { ascending: true, nullsFirst: true });
 
@@ -183,6 +186,51 @@ export default async function EventPage({
   const eventStatus = (event as { status?: string }).status;
   const isDemo = (event as { is_demo?: boolean }).is_demo === true;
   const showContactForm = eventStatus === "published" && !isDemo;
+
+  const entriesOpenAtRaw = (event as { entries_open_at?: string | null }).entries_open_at ?? null;
+  const registrationOpensAt = (() => {
+    if (!entriesOpenAtRaw) return null;
+    const d = new Date(entriesOpenAtRaw);
+    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return null;
+    return d;
+  })();
+
+  const distanceIds = distanceRows.map((d) => d.id);
+  const aidStationsByDistance = new Map<string, Array<{
+    id: string;
+    name: string;
+    mile_marker: string | null;
+    lat: number | null;
+    lng: number | null;
+    drop_bags: boolean;
+    sort_order: number;
+  }>>();
+  if (distanceIds.length > 0) {
+    const { data: aidRows } = await supabase
+      .from("aid_stations")
+      .select("id,distance_id,name,mile_marker,lat,lng,drop_bags,sort_order")
+      .in("distance_id", distanceIds)
+      .order("sort_order", { ascending: true });
+    for (const row of aidRows ?? []) {
+      const r = row as {
+        id: string;
+        distance_id: string;
+        name: string;
+        mile_marker: string | null;
+        lat: number | null;
+        lng: number | null;
+        drop_bags: boolean;
+        sort_order: number;
+      };
+      if (!aidStationsByDistance.has(r.distance_id)) aidStationsByDistance.set(r.distance_id, []);
+      aidStationsByDistance.get(r.distance_id)!.push(r);
+    }
+  }
+
+  const raceDaySheetDistances: RaceDaySheetDistance[] = distanceRows.map((d) => ({
+    ...(d as unknown as RaceDaySheetDistance),
+    aidStations: aidStationsByDistance.get(d.id) ?? [],
+  }));
   const organizerContactName =
     (event as { organizer_contact_name?: string | null }).organizer_contact_name ?? null;
 
@@ -425,8 +473,22 @@ export default async function EventPage({
           </section>
         ) : null}
 
+        <RaceDaySheet distances={raceDaySheetDistances} venueName={venueName} />
+
         <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          {entriesOpen ? (
+          {registrationOpensAt ? (
+            <span
+              className="inline-flex items-center justify-center rounded-md border border-[#E87722]/30 bg-[#E87722]/10 px-6 py-3 text-sm font-semibold text-[#1E3A5F]"
+              aria-disabled="true"
+            >
+              Registration opens{" "}
+              {registrationOpensAt.toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+          ) : entriesOpen ? (
             <>
               <EventEnterButton
                 eventId={event.id}

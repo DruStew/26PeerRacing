@@ -84,12 +84,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id,pr_cutoff,promoter_id,name")
+    .select("id,pr_cutoff,promoter_id,name,entries_open_at")
     .eq("id", eventId)
     .single();
 
   if (eventError || !event) {
     return NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 });
+  }
+
+  const entriesOpenAtRaw = (event as { entries_open_at?: string | null }).entries_open_at;
+  if (entriesOpenAtRaw) {
+    const opensAt = new Date(entriesOpenAtRaw);
+    if (!Number.isNaN(opensAt.getTime()) && Date.now() < opensAt.getTime()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Registration for this event opens ${opensAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`,
+        },
+        { status: 403 },
+      );
+    }
   }
 
   const eventCutoff = event.pr_cutoff ? new Date(event.pr_cutoff) : null;

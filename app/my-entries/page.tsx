@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { isDistanceEntryOpen } from "@/lib/entry-cutoff";
+import { effectiveCheckInWindow } from "@/lib/race-day/logistics";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { DEFAULT_PUBLIC_ROUTE, MY_RESULTS_ROUTE } from "@/lib/routes";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -30,12 +31,42 @@ type EntryRow = {
     label: string;
     is_peer_racing_qualifier: boolean | null;
     pr_cutoff: string | null;
+    gun_time: string | null;
+    check_in_opens_at: string | null;
+    check_in_closes_at: string | null;
+    start_location_name: string | null;
   } | null;
 };
 
 function embedOne<T extends object>(v: T | T[] | null): T | null {
   if (v == null) return null;
   return Array.isArray(v) ? (v[0] as T | undefined) ?? null : v;
+}
+
+function fmtClock(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+/** One-line race-day summary for an upcoming entry: check-in window, gun, start line. */
+function raceDayLine(dist: EntryRow["distances"]): string | null {
+  if (!dist) return null;
+  const win = effectiveCheckInWindow({
+    gun_time: dist.gun_time,
+    check_in_opens_at: dist.check_in_opens_at,
+    check_in_closes_at: dist.check_in_closes_at,
+  });
+  const parts: string[] = [];
+  const opens = fmtClock(win.opensAt);
+  const closes = fmtClock(win.closesAt);
+  if (opens && closes) parts.push(`Check-in ${opens}–${closes}`);
+  else if (opens) parts.push(`Check-in opens ${opens}`);
+  const gun = fmtClock(dist.gun_time);
+  if (gun) parts.push(`Gun ${gun}`);
+  if (dist.start_location_name?.trim()) parts.push(`Start: ${dist.start_location_name.trim()}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 function normalizeEntryRows(raw: unknown[]): EntryRow[] {
@@ -75,7 +106,7 @@ export default async function MyEntriesPage() {
       event_id,
       distance_id,
       events ( id, name, race_date, city, state, pr_cutoff, status ),
-      distances ( id, label, is_peer_racing_qualifier, pr_cutoff )
+      distances ( id, label, is_peer_racing_qualifier, pr_cutoff, gun_time, check_in_opens_at, check_in_closes_at, start_location_name )
     `,
     )
     .eq("user_id", user.id)
@@ -257,6 +288,17 @@ export default async function MyEntriesPage() {
                             <div>
                               <p className="font-semibold text-[#1E3A5F]">Race: {dist?.label ?? "—"}</p>
                               <p className="mt-1 text-sm text-[#1E3A5F]/75">{kindLabel}</p>
+                              {!isPast && raceDayLine(dist) ? (
+                                <p className="mt-1.5 inline-flex flex-wrap items-center gap-1 rounded-md bg-[#E87722]/10 px-2 py-1 text-xs font-medium text-[#1E3A5F]">
+                                  <span aria-hidden>🏁</span> {raceDayLine(dist)}{" "}
+                                  <Link
+                                    href={`/events/${ev.id}#race-day`}
+                                    className="font-semibold text-[#E87722] underline-offset-2 hover:underline"
+                                  >
+                                    Race day sheet →
+                                  </Link>
+                                </p>
+                              ) : null}
                               <p className="mt-1 text-xs text-[#1E3A5F]/55">
                                 Entered{" "}
                                 {new Date(entry.created_at).toLocaleString("en-US", {

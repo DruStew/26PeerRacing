@@ -3,12 +3,18 @@ import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
+import { StartAidStationsEditorLazy } from "@/components/maps/StartAidStationsEditorLazy";
 import type { CourseGeoJSON } from "@/lib/mapbox/config";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
 import { GunEntryDeadlineFields } from "@/components/promoter/GunEntryDeadlineFields";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { parseDistanceTierFlagsFromForm } from "@/lib/membership-tiers";
-import { datetimeLocalInputValueOrEntryDeadlineFromGun, datetimeLocalInputValueOrRaceDayDefault } from "@/lib/datetime-local";
+import {
+  datetimeLocalInputValueOrEntryDeadlineFromGun,
+  datetimeLocalInputValueOrRaceDayDefault,
+  toDatetimeLocalInputValue,
+} from "@/lib/datetime-local";
+import { effectiveCheckInWindow } from "@/lib/race-day/logistics";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const inputClass =
@@ -33,7 +39,7 @@ export default async function EditDistancePage({
 
   const { data: event, error: eventError } = await supabase
     .from("events")
-    .select("id,name,race_date,venue_lat,venue_lng")
+    .select("id,name,race_date,venue_lat,venue_lng,city,state")
     .eq("id", eventId)
     .single();
 
@@ -44,7 +50,7 @@ export default async function EditDistancePage({
   const { data: distance, error: distanceError } = await supabase
     .from("distances")
     .select(
-      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier",
+      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,packet_pickup_info,additional_notes",
     )
     .eq("id", distanceId)
     .eq("event_id", eventId)
@@ -86,6 +92,36 @@ export default async function EditDistancePage({
   const isThisQualifier =
     (distance as { is_peer_racing_qualifier?: boolean }).is_peer_racing_qualifier === true;
   const otherIsQualifier = qualifierDistance && qualifierDistance.id !== distanceId;
+
+  const logistics = distance as {
+    check_in_opens_at?: string | null;
+    check_in_closes_at?: string | null;
+    allow_walk_ups?: boolean | null;
+    walk_up_fee_cents?: number | null;
+    start_location_name?: string | null;
+    start_location_address?: string | null;
+    start_lat?: number | null;
+    start_lng?: number | null;
+    course_cutoff_at?: string | null;
+    packet_pickup_info?: string | null;
+    additional_notes?: string | null;
+  };
+  const checkInWindow = effectiveCheckInWindow({
+    gun_time: distanceWithExtras.gun_time ?? null,
+    check_in_opens_at: logistics.check_in_opens_at ?? null,
+    check_in_closes_at: logistics.check_in_closes_at ?? null,
+  });
+  const checkInOpensDefault = toDatetimeLocalInputValue(checkInWindow.opensAt);
+  const checkInClosesDefault = toDatetimeLocalInputValue(checkInWindow.closesAt);
+  const walkUpFeeDollarsDefault =
+    logistics.walk_up_fee_cents != null ? (logistics.walk_up_fee_cents / 100).toFixed(2) : "";
+  const courseCutoffDefault = toDatetimeLocalInputValue(logistics.course_cutoff_at ?? null);
+
+  const { data: aidStationsRaw } = await supabase
+    .from("aid_stations")
+    .select("name,mile_marker,lat,lng,drop_bags,sort_order")
+    .eq("distance_id", distanceId)
+    .order("sort_order", { ascending: true });
 
   const updateDistance = async (formData: FormData) => {
     "use server";
@@ -133,6 +169,22 @@ export default async function EditDistancePage({
 
     const tierFlags = parseDistanceTierFlagsFromForm(formData);
 
+    const parseDatetime = (field: string): string | null => {
+      const raw = formData.get(field);
+      if (raw == null || String(raw).trim() === "") return null;
+      const d = new Date(String(raw).trim());
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    };
+
+    const allowWalkUps = formData.get("allow_walk_ups") === "1";
+    const walkUpFeeDollarsRaw = formData.get("walk_up_fee_dollars");
+    const walkUpFeeCents = (() => {
+      if (walkUpFeeDollarsRaw == null || String(walkUpFeeDollarsRaw).trim() === "") return null;
+      const d = parseFloat(String(walkUpFeeDollarsRaw).replace(/[$,\s]/g, ""));
+      if (Number.isNaN(d) || d < 0) return null;
+      return Math.round(d * 100);
+    })();
+
     const { error } = await supabase
       .from("distances")
       .update({
@@ -146,6 +198,13 @@ export default async function EditDistancePage({
         allow_pacers: allowPacers,
         pacer_fee_cents: pacerFeeCents,
         entry_fee_cents: entryFeeCents,
+        check_in_opens_at: parseDatetime("check_in_opens_at"),
+        check_in_closes_at: parseDatetime("check_in_closes_at"),
+        allow_walk_ups: allowWalkUps,
+        walk_up_fee_cents: allowWalkUps ? walkUpFeeCents : null,
+        course_cutoff_at: parseDatetime("course_cutoff_at"),
+        packet_pickup_info: String(formData.get("packet_pickup_info") ?? "").trim() || null,
+        additional_notes: String(formData.get("additional_notes") ?? "").trim() || null,
         ...tierFlags,
       })
       .eq("id", distanceId)
@@ -242,6 +301,120 @@ export default async function EditDistancePage({
               defaultEntryDeadline={entryDeadlineDefault}
               inputClass={inputClass}
             />
+
+            <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
+              <p className="font-display text-base font-semibold text-[#1E3A5F]">
+                Race-Day Check-In
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-[#1E3A5F]/70">
+                When your check-in desk is open for this race.
+                {checkInWindow.derived
+                  ? " Pre-filled to one hour before gun time — adjust as needed."
+                  : ""}
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="check_in_opens_at" className="text-sm font-medium text-[#1E3A5F]">
+                    Check-in opens
+                  </label>
+                  <input
+                    id="check_in_opens_at"
+                    name="check_in_opens_at"
+                    type="datetime-local"
+                    defaultValue={checkInOpensDefault}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="check_in_closes_at" className="text-sm font-medium text-[#1E3A5F]">
+                    Check-in closes
+                  </label>
+                  <input
+                    id="check_in_closes_at"
+                    name="check_in_closes_at"
+                    type="datetime-local"
+                    defaultValue={checkInClosesDefault}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              <label className="mt-5 flex cursor-pointer items-center gap-2 text-sm text-[#1E3A5F]">
+                <input
+                  type="checkbox"
+                  name="allow_walk_ups"
+                  value="1"
+                  defaultChecked={logistics.allow_walk_ups !== false}
+                  className="h-4 w-4 rounded border-[#1E3A5F]/30 text-[#E87722] focus:ring-[#E87722]"
+                />
+                Allow walk-up entries (register at the desk on race day)
+              </label>
+              <div className="mt-3">
+                <label htmlFor="walk_up_fee_dollars" className="text-sm font-medium text-[#1E3A5F]">
+                  Race-day entry fee ($){" "}
+                  <span className="font-normal text-[#1E3A5F]/55">
+                    (optional — blank uses the online fee)
+                  </span>
+                </label>
+                <input
+                  id="walk_up_fee_dollars"
+                  name="walk_up_fee_dollars"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  defaultValue={walkUpFeeDollarsDefault}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
+              <p className="font-display text-base font-semibold text-[#1E3A5F]">
+                Course Cutoff & Packet Pickup
+              </p>
+              <div className="mt-4">
+                <label htmlFor="course_cutoff_at" className="text-sm font-medium text-[#1E3A5F]">
+                  Course cutoff{" "}
+                  <span className="font-normal text-[#1E3A5F]/55">
+                    (optional — final on-course cutoff, mostly for ultras)
+                  </span>
+                </label>
+                <input
+                  id="course_cutoff_at"
+                  name="course_cutoff_at"
+                  type="datetime-local"
+                  defaultValue={courseCutoffDefault}
+                  className={inputClass}
+                />
+              </div>
+              <div className="mt-4">
+                <label htmlFor="packet_pickup_info" className="text-sm font-medium text-[#1E3A5F]">
+                  Packet pickup <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
+                </label>
+                <textarea
+                  id="packet_pickup_info"
+                  name="packet_pickup_info"
+                  rows={3}
+                  defaultValue={logistics.packet_pickup_info ?? ""}
+                  placeholder="Fri 1–6 PM, Sturgis RV Park & Campground. Drop bags due by 6 PM."
+                  className={inputClass}
+                />
+              </div>
+              <div className="mt-4">
+                <label htmlFor="additional_notes" className="text-sm font-medium text-[#1E3A5F]">
+                  Additional notes for this race{" "}
+                  <span className="font-normal text-[#1E3A5F]/55">(optional)</span>
+                </label>
+                <textarea
+                  id="additional_notes"
+                  name="additional_notes"
+                  rows={4}
+                  defaultValue={logistics.additional_notes ?? ""}
+                  placeholder="Buses leave Woodle Field at 6 AM. First and last mile are paved; the rest is dirt."
+                  className={inputClass}
+                />
+              </div>
+            </div>
 
             <div className="rounded-lg border border-[#1E3A5F]/15 bg-white p-4 sm:p-5">
               <p className="font-display text-base font-semibold text-[#1E3A5F]">
@@ -362,6 +535,48 @@ export default async function EditDistancePage({
             </button>
           </form>
         </div>
+
+        <section className="mt-10">
+          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
+            Start Line & Aid Stations
+          </h2>
+          <p className="mt-1 text-sm text-[#1E3A5F]/70">
+            Pin where this race starts if it differs from the event venue (point-to-point races),
+            and drop a pin for each aid station. Short races can skip this entirely.
+          </p>
+          <div className="mt-6">
+            <StartAidStationsEditorLazy
+              eventId={eventId}
+              distanceId={distanceId}
+              initialStart={{
+                name: logistics.start_location_name ?? "",
+                address: logistics.start_location_address ?? "",
+                lat: logistics.start_lat ?? null,
+                lng: logistics.start_lng ?? null,
+              }}
+              initialStations={(aidStationsRaw ?? []).map((s) => ({
+                name: (s as { name: string }).name,
+                mile_marker: (s as { mile_marker?: string | null }).mile_marker ?? null,
+                lat: (s as { lat?: number | null }).lat ?? null,
+                lng: (s as { lng?: number | null }).lng ?? null,
+                drop_bags: (s as { drop_bags?: boolean }).drop_bags === true,
+              }))}
+              venue={
+                (event as { venue_lat?: number | null }).venue_lat != null &&
+                (event as { venue_lng?: number | null }).venue_lng != null
+                  ? {
+                      lat: (event as { venue_lat: number }).venue_lat,
+                      lng: (event as { venue_lng: number }).venue_lng,
+                    }
+                  : null
+              }
+              searchBias={{
+                city: (event as { city?: string | null }).city,
+                state: (event as { state?: string | null }).state,
+              }}
+            />
+          </div>
+        </section>
 
         <section className="mt-10">
           <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Course Map</h2>

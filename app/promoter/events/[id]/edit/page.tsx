@@ -8,6 +8,7 @@ import {
   defaultDatetimeLocalFromRaceDay,
   entryDeadlineDatetimeLocalFromGun,
   formatDateTimeLocal,
+  toDatetimeLocalInputValue,
 } from "@/lib/datetime-local";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -52,7 +53,7 @@ export default async function EditEventPage({
   const { data: event, error } = await supabase
     .from("events")
     .select(
-      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo,organizer_contact_name,organizer_contact_email",
+      "id,name,city,state,race_date,gun_time,pr_cutoff,status,artwork_url,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,promoter_id,is_demo,organizer_contact_name,organizer_contact_email,entries_open_at",
     )
     .eq("id", id)
     .single();
@@ -355,6 +356,7 @@ export default async function EditEventPage({
               eventId={event.id}
               raceDate={event.race_date as string}
               endDate={(event as { end_date?: string | null }).end_date ?? null}
+              entriesOpenAt={toDatetimeLocalInputValue((event as { entries_open_at?: string | null }).entries_open_at ?? null)}
               returnTo={`/promoter/events/${id}/edit`}
             />
           </div>
