@@ -1,10 +1,9 @@
 import "server-only";
 
-import fs from "node:fs";
-import path from "node:path";
-
 import * as opentype from "opentype.js";
 import QRCode from "qrcode";
+
+import { LOGIK_FONT_BASE64, PR_LOGO_SVG } from "./assets.generated";
 
 /**
  * Print-ready QR checkpoint signs.
@@ -30,8 +29,7 @@ const CONTENT_W = 1000;
 let cachedFont: opentype.Font | null = null;
 function brandFont(): opentype.Font {
   if (cachedFont) return cachedFont;
-  const file = path.join(process.cwd(), "public", "Font", "Logik-ExtendedBoldOblique.ttf");
-  const buf = fs.readFileSync(file);
+  const buf = Buffer.from(LOGIK_FONT_BASE64, "base64");
   cachedFont = opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   return cachedFont;
 }
@@ -39,8 +37,7 @@ function brandFont(): opentype.Font {
 let cachedLogo: { inner: string; aspect: number } | null = null;
 function brandLogo(): { inner: string; aspect: number } {
   if (cachedLogo) return cachedLogo;
-  const file = path.join(process.cwd(), "public", "PR_primarylogo.svg");
-  const raw = fs.readFileSync(file, "utf8");
+  const raw = PR_LOGO_SVG;
   const viewBox = raw.match(/viewBox="([\d.\s-]+)"/)?.[1]?.split(/\s+/).map(Number);
   const vw = viewBox?.[2] ?? 1920;
   const vh = viewBox?.[3] ?? 986.85;
