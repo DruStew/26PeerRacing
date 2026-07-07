@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { RaceDayShareLauncher } from "@/components/share/RaceDayShareLauncher";
 import { isDistanceEntryOpen } from "@/lib/entry-cutoff";
 import { effectiveCheckInWindow } from "@/lib/race-day/logistics";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
@@ -35,6 +36,7 @@ type EntryRow = {
     check_in_opens_at: string | null;
     check_in_closes_at: string | null;
     start_location_name: string | null;
+    share_sponsor_logo_url: string | null;
   } | null;
 };
 
@@ -106,7 +108,7 @@ export default async function MyEntriesPage() {
       event_id,
       distance_id,
       events ( id, name, race_date, city, state, pr_cutoff, status ),
-      distances ( id, label, is_peer_racing_qualifier, pr_cutoff, gun_time, check_in_opens_at, check_in_closes_at, start_location_name )
+      distances ( id, label, is_peer_racing_qualifier, pr_cutoff, gun_time, check_in_opens_at, check_in_closes_at, start_location_name, share_sponsor_logo_url )
     `,
     )
     .eq("user_id", user.id)
@@ -118,6 +120,17 @@ export default async function MyEntriesPage() {
 
   const rows = normalizeEntryRows(rawRows ?? []);
   const byId = new Map(rows.map((r) => [r.id, r]));
+
+  const { data: myProfile } = await supabase
+    .from("profiles")
+    .select("first_name,last_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const runnerName = myProfile
+    ? `${(myProfile as { first_name: string | null }).first_name ?? ""} ${
+        (myProfile as { last_name: string | null }).last_name ?? ""
+      }`.trim() || null
+    : null;
 
   // Published results owned by this racer, keyed by entry so we can link each
   // entry straight to its gamified result page.
@@ -298,6 +311,21 @@ export default async function MyEntriesPage() {
                                     Race day sheet →
                                   </Link>
                                 </p>
+                              ) : null}
+                              {!isPast && dist ? (
+                                <div>
+                                  <RaceDayShareLauncher
+                                    eventName={ev.name}
+                                    distanceLabel={dist.label}
+                                    runnerName={runnerName}
+                                    sponsorLogoUrl={
+                                      dist.share_sponsor_logo_url ??
+                                      list.find((e) => e.distances?.share_sponsor_logo_url)
+                                        ?.distances?.share_sponsor_logo_url ??
+                                      null
+                                    }
+                                  />
+                                </div>
                               ) : null}
                               <p className="mt-1 text-xs text-[#1E3A5F]/55">
                                 Entered{" "}

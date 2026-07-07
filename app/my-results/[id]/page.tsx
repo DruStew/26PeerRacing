@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { DivisionBadge, DIVISION_COLORS } from "@/components/results/DivisionBadge";
+import { ShareCardStudio } from "@/components/share/ShareCardStudio";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { MY_RESULTS_ROUTE } from "@/lib/routes";
 import {
@@ -11,6 +12,7 @@ import {
   loadRacerResult,
   ordinal,
 } from "@/lib/results-racer";
+import { resolveSponsorLogo } from "@/lib/share/sponsor";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
@@ -60,6 +62,48 @@ export default async function RacerResultDetailPage({
     });
   }
   const totalWon = moneyLines.reduce((s, m) => s + m.cents, 0);
+
+  // Share graphic inputs
+  const [{ data: profile }, sponsorLogoUrl] = await Promise.all([
+    service.from("profiles").select("first_name,last_name").eq("id", user.id).maybeSingle(),
+    resolveSponsorLogo(service, r.eventId, r.distanceId),
+  ]);
+  const runnerName = profile
+    ? `${(profile as { first_name: string | null }).first_name ?? ""} ${
+        (profile as { last_name: string | null }).last_name ?? ""
+      }`.trim() || null
+    : null;
+  const shareData = {
+    kind: "finish" as const,
+    eventName: r.eventName,
+    distanceLabel: r.distanceLabel,
+    runnerName,
+    timeText: r.finishTimeMs != null ? formatFinishTime(r.finishTimeMs) : null,
+    division: r.division,
+    divisionPlaceText: r.divisionPlace ? ordinal(r.divisionPlace).toUpperCase() : null,
+    overallText:
+      r.overallRank != null
+        ? `${ordinal(r.overallRank).toUpperCase()}${overallFinishers > 0 ? ` OF ${overallFinishers}` : ""} OVERALL`
+        : null,
+    femalePoolText:
+      r.femaleIncentivePlace != null
+        ? `${ordinal(r.femaleIncentivePlace).toUpperCase()} FEMALE POOL${
+            r.femaleIncentivePayoutCents > 0 ? ` · ${formatUsd(r.femaleIncentivePayoutCents)}` : ""
+          }`
+        : null,
+    militaryPoolText:
+      r.militaryIncentivePlace != null
+        ? `${ordinal(r.militaryIncentivePlace).toUpperCase()} MILITARY POOL${
+            r.militaryIncentivePayoutCents > 0 ? ` · ${formatUsd(r.militaryIncentivePayoutCents)}` : ""
+          }`
+        : null,
+    moneyLines:
+      r.payoutCents > 0 && r.division
+        ? [{ label: `${r.division.toUpperCase()} DIVISION`, amountText: formatUsd(r.payoutCents) }]
+        : [],
+    totalWonText: totalWon > 0 ? formatUsd(totalWon) : null,
+    sponsorLogoUrl,
+  };
 
   return (
     <div className="min-h-screen bg-[#fafbfc] font-sans text-[#1E3A5F]">
@@ -169,6 +213,14 @@ export default async function RacerResultDetailPage({
             </p>
           </section>
         )}
+
+        {/* social share studio */}
+        <section className="mt-6">
+          <ShareCardStudio
+            data={shareData}
+            fileBase={`${r.eventName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-finish`}
+          />
+        </section>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
           <Link

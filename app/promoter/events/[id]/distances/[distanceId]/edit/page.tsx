@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { CheckpointsEditor } from "@/components/checkpoints/CheckpointsEditor";
+import { SponsorLogoUploader } from "@/components/share/SponsorLogoUploader";
 import { CHECKPOINT_AUDIO_BUCKET } from "@/lib/checkpoints/shared";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
@@ -52,7 +53,7 @@ export default async function EditDistancePage({
   const { data: distance, error: distanceError } = await supabase
     .from("distances")
     .select(
-      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes",
+      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes,share_sponsor_logo_url",
     )
     .eq("id", distanceId)
     .eq("event_id", eventId)
@@ -126,6 +127,19 @@ export default async function EditDistancePage({
     .select("name,mile_marker,lat,lng,drop_bags,sort_order")
     .eq("distance_id", distanceId)
     .order("sort_order", { ascending: true });
+
+  // Sponsor logo: own value + what this distance would inherit from siblings.
+  const ownSponsorLogo =
+    (distance as { share_sponsor_logo_url?: string | null }).share_sponsor_logo_url ?? null;
+  const { data: siblingLogosRaw } = await supabase
+    .from("distances")
+    .select("id,share_sponsor_logo_url,sort_order")
+    .eq("event_id", eventId)
+    .order("sort_order", { ascending: true });
+  const inheritedSponsorLogo =
+    ((siblingLogosRaw ?? []) as Array<{ id: string; share_sponsor_logo_url: string | null }>).find(
+      (d) => d.id !== distanceId && d.share_sponsor_logo_url,
+    )?.share_sponsor_logo_url ?? null;
 
   // QR checkpoints (promoter RLS allows this select).
   const { data: checkpointsRaw } = await supabase
@@ -529,6 +543,25 @@ export default async function EditDistancePage({
                 city: (event as { city?: string | null }).city,
                 state: (event as { state?: string | null }).state,
               }}
+            />
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
+            Racer Share Graphics
+          </h2>
+          <p className="mt-1 text-sm text-[#1E3A5F]/70">
+            After results publish, racers get a branded &ldquo;share your finish&rdquo; graphic for
+            Instagram, Facebook, and TikTok — badge, time, placings, and winnings. Add a sponsor
+            logo and it appears on every one of those posts.
+          </p>
+          <div className="mt-6">
+            <SponsorLogoUploader
+              eventId={eventId}
+              distanceId={distanceId}
+              ownLogoUrl={ownSponsorLogo}
+              inheritedLogoUrl={inheritedSponsorLogo}
             />
           </div>
         </section>

@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { DivisionBadge } from "@/components/results/DivisionBadge";
+import { ShareCardStudio } from "@/components/share/ShareCardStudio";
 import { loadDemoRunnerIndex, loadDemoRunnerView } from "@/lib/demo/runner-view";
+import { resolveSponsorLogo } from "@/lib/share/sponsor";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { formatFinishTime, formatUsd, ordinal } from "@/lib/results-racer";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -42,6 +44,57 @@ export default async function DemoRunnerViewPage({
   const people = await loadDemoRunnerIndex(service, id);
   const view = selectedEntryId ? await loadDemoRunnerView(service, id, selectedEntryId) : null;
   const location = [event.city, event.state].filter(Boolean).join(", ");
+
+  // Share studio inputs: the runner's primary finished race + sponsor logo.
+  const shareResult = view?.results.find((r) => r.finishTimeMs != null) ?? view?.results[0] ?? null;
+  const shareSponsorLogo = shareResult
+    ? await resolveSponsorLogo(service, id, shareResult.distanceId)
+    : null;
+  const shareData =
+    view && shareResult
+      ? {
+          kind: "finish" as const,
+          eventName: event.name as string,
+          distanceLabel: shareResult.distanceLabel,
+          runnerName: view.name,
+          timeText: shareResult.finishTimeMs != null ? formatFinishTime(shareResult.finishTimeMs) : null,
+          division: shareResult.division,
+          divisionPlaceText: shareResult.divisionPlace
+            ? ordinal(shareResult.divisionPlace).toUpperCase()
+            : null,
+          overallText:
+            shareResult.overallRank != null
+              ? `${ordinal(shareResult.overallRank).toUpperCase()} OF ${shareResult.overallFinishers} OVERALL`
+              : null,
+          femalePoolText:
+            shareResult.femaleIncentivePlace != null
+              ? `${ordinal(shareResult.femaleIncentivePlace).toUpperCase()} FEMALE POOL${
+                  shareResult.femaleIncentivePayoutCents > 0
+                    ? ` · ${formatUsd(shareResult.femaleIncentivePayoutCents)}`
+                    : ""
+                }`
+              : null,
+          militaryPoolText:
+            shareResult.militaryIncentivePlace != null
+              ? `${ordinal(shareResult.militaryIncentivePlace).toUpperCase()} MILITARY POOL${
+                  shareResult.militaryIncentivePayoutCents > 0
+                    ? ` · ${formatUsd(shareResult.militaryIncentivePayoutCents)}`
+                    : ""
+                }`
+              : null,
+          moneyLines:
+            shareResult.payoutCents > 0 && shareResult.division
+              ? [
+                  {
+                    label: `${shareResult.division.toUpperCase()} DIVISION`,
+                    amountText: formatUsd(shareResult.payoutCents),
+                  },
+                ]
+              : [],
+          totalWonText: view.totalWonCents > 0 ? formatUsd(view.totalWonCents) : null,
+          sponsorLogoUrl: shareSponsorLogo,
+        }
+      : null;
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-12">
@@ -231,6 +284,15 @@ export default async function DemoRunnerViewPage({
                   </span>
                 ))}
               </div>
+            </section>
+          ) : null}
+
+          {shareData ? (
+            <section className="mt-8">
+              <ShareCardStudio
+                data={shareData}
+                fileBase={`${(event.name as string).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-finish`}
+              />
             </section>
           ) : null}
 
