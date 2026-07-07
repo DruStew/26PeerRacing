@@ -39,6 +39,7 @@ export default async function DemoRaceHubPage({ params }: { params: Promise<{ id
     { label: "Results console", href: `/promoter/events/${id}/results`, desc: "Live divisions and money preview — cannot publish" },
     { label: "Import finish times", href: `/promoter/events/${id}/results/import`, desc: "Timing CSV" },
     { label: "Runner view", href: `/admin/demo-races/${id}/runner-view`, desc: "What any racer's My Results page would show — time, badges, money" },
+    { label: "QR checkpoint live board", href: `/promoter/events/${id}/checkpoints`, desc: "Scan a printed checkpoint sign with your phone and watch the ping appear" },
   ];
 
   return (

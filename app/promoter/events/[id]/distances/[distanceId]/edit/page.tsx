@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
+import { CheckpointsEditor } from "@/components/checkpoints/CheckpointsEditor";
+import { CHECKPOINT_AUDIO_BUCKET } from "@/lib/checkpoints/shared";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
 import { StartAidStationsEditorLazy } from "@/components/maps/StartAidStationsEditorLazy";
@@ -123,6 +126,32 @@ export default async function EditDistancePage({
     .select("name,mile_marker,lat,lng,drop_bags,sort_order")
     .eq("distance_id", distanceId)
     .order("sort_order", { ascending: true });
+
+  // QR checkpoints (promoter RLS allows this select).
+  const { data: checkpointsRaw } = await supabase
+    .from("qr_checkpoints")
+    .select("id,name,mile_marker,sort_order,audio_path,token")
+    .eq("distance_id", distanceId)
+    .order("sort_order", { ascending: true });
+  const hdrs = await headers();
+  const hostHdr = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "peerracing.com";
+  const protoHdr = hdrs.get("x-forwarded-proto") ?? (hostHdr.includes("localhost") ? "http" : "https");
+  const scanOrigin = `${protoHdr}://${hostHdr}`;
+  const initialCheckpoints = ((checkpointsRaw ?? []) as Array<{
+    id: string;
+    name: string;
+    mile_marker: string | null;
+    audio_path: string | null;
+    token: string;
+  }>).map((c) => ({
+    id: c.id,
+    name: c.name,
+    mile_marker: c.mile_marker,
+    audio_url: c.audio_path
+      ? supabase.storage.from(CHECKPOINT_AUDIO_BUCKET).getPublicUrl(c.audio_path).data.publicUrl
+      : null,
+    scan_url: `${scanOrigin}/c/${c.token}`,
+  }));
 
   const updateDistance = async (formData: FormData) => {
     "use server";
@@ -500,6 +529,29 @@ export default async function EditDistancePage({
                 city: (event as { city?: string | null }).city,
                 state: (event as { state?: string | null }).state,
               }}
+            />
+          </div>
+        </section>
+
+        <section className="mt-10">
+          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">QR Trail Checkpoints</h2>
+          <p className="mt-1 text-sm text-[#1E3A5F]/70">
+            Optional scannable signs along the course — live runner tracking plus audio stories.
+            Watch scans come in on the{" "}
+            <Link
+              href={`/promoter/events/${eventId}/checkpoints`}
+              className="font-medium text-[#E87722] hover:underline"
+            >
+              Live Board
+            </Link>
+            .
+          </p>
+          <div className="mt-6">
+            <CheckpointsEditor
+              eventId={eventId}
+              distanceId={distanceId}
+              initial={initialCheckpoints}
+              inputClass={inputClass}
             />
           </div>
         </section>

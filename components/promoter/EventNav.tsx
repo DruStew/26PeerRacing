@@ -8,6 +8,7 @@ const TABS = [
   { key: "kiosk", label: "Race Day Kiosk", path: "kiosk" },
   { key: "payout", label: "Payout Calculator", path: "payout" },
   { key: "results", label: "Results Console", path: "results" },
+  { key: "checkpoints", label: "Live Board", path: "checkpoints" },
 ] as const;
 
 export type EventNavTab = (typeof TABS)[number]["key"];
