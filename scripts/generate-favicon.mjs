@@ -1,21 +1,33 @@
-// Generate the site icons (favicon.ico, icon.png, apple-icon.png) from the
-// PR primary logo SVG. Uses headless Chromium so the SVG renders exactly as
-// browsers see it. Usage: node scripts/generate-favicon.mjs
+// Generate the site icons:
+//  - favicon.ico (tab icon) from the small shoe mark (public/shoe_favicon.png)
+//  - icon.png / apple-icon.png (bookmark + home-screen sizes) from the full
+//    PR primary logo SVG, since the shoe export is only 36px.
+// Uses headless Chromium so the SVG renders exactly as browsers see it.
+// Usage: node scripts/generate-favicon.mjs
 import { chromium } from "playwright";
 import fs from "node:fs";
 
 const svg = fs.readFileSync("public/PR_primarylogo.svg", "utf8");
 const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+const shoeDataUrl = `data:image/png;base64,${fs
+  .readFileSync("public/shoe_favicon.png")
+  .toString("base64")}`;
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 
-const out = await page.evaluate(async (src) => {
+const out = await page.evaluate(async ({ src, shoeSrc }) => {
   const img = new Image();
   await new Promise((res, rej) => {
     img.onload = res;
     img.onerror = () => rej(new Error("SVG failed to load"));
     img.src = src;
+  });
+  const shoe = new Image();
+  await new Promise((res, rej) => {
+    shoe.onload = res;
+    shoe.onerror = () => rej(new Error("Shoe PNG failed to load"));
+    shoe.src = shoeSrc;
   });
 
   // Render large, then find the tight bounding box of the artwork.
@@ -58,13 +70,28 @@ const out = await page.evaluate(async (src) => {
     return c.toDataURL("image/png");
   }
 
+  // Tab icon sizes come straight from the shoe mark (native 36px, no upscaling issues).
+  function renderShoe(size) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    const scale = Math.min(size / shoe.naturalWidth, size / shoe.naturalHeight);
+    const dw = shoe.naturalWidth * scale;
+    const dh = shoe.naturalHeight * scale;
+    ctx.drawImage(shoe, (size - dw) / 2, (size - dh) / 2, dw, dh);
+    return c.toDataURL("image/png");
+  }
+
   return {
     icon512: renderSquare(512, 12, null),
-    icon64: renderSquare(64, 2, null),
-    icon32: renderSquare(32, 1, null),
+    icon36: renderShoe(36),
+    icon32: renderShoe(32),
+    icon16: renderShoe(16),
     apple: renderSquare(180, 16, "#eef1f4"), // iOS dislikes transparency
   };
-}, dataUrl);
+}, { src: dataUrl, shoeSrc: shoeDataUrl });
 
 await browser.close();
 
@@ -94,13 +121,15 @@ function icoFromPngs(entries) {
   return Buffer.concat([header, ...dirs, ...bodies]);
 }
 
-fs.writeFileSync("app/icon.png", png(out.icon512));
+// No app/icon.png on purpose: browsers prefer it over favicon.ico for the
+// tab, and we want the shoe mark there — the full logo is unreadable at 16px.
 fs.writeFileSync("app/apple-icon.png", png(out.apple));
 fs.writeFileSync(
   "app/favicon.ico",
   icoFromPngs([
+    { size: 16, buf: png(out.icon16) },
     { size: 32, buf: png(out.icon32) },
-    { size: 64, buf: png(out.icon64) },
+    { size: 36, buf: png(out.icon36) },
   ]),
 );
-console.log("Wrote app/icon.png, app/apple-icon.png, app/favicon.ico");
+console.log("Wrote app/apple-icon.png and app/favicon.ico (shoe mark)");
