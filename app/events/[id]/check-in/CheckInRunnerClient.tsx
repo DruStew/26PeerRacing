@@ -57,7 +57,41 @@ type RunnerProfile = {
   phone: string;
   /** Peer Racing ID / bib #; entries.bib mirrors per race for RR export. */
   pr_id: string | null;
+  sex?: string | null;
+  active_or_retired_military?: boolean | null;
 };
+
+/** M/F + Military chips shown by the runner's name so the desk can verbally confirm. */
+function SexMilitaryBadges({ profile }: { profile: RunnerProfile }) {
+  const sexRaw = (profile.sex ?? "").trim().toLowerCase();
+  const isFemale = sexRaw.startsWith("f");
+  const isMale = sexRaw.startsWith("m");
+  const military = profile.active_or_retired_military === true;
+  return (
+    <span className="inline-flex flex-wrap items-center justify-center gap-1.5 align-middle">
+      {isFemale || isMale ? (
+        <span
+          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ring-1 ${
+            isFemale
+              ? "bg-pink-50 text-pink-700 ring-pink-300"
+              : "bg-sky-50 text-sky-700 ring-sky-300"
+          }`}
+        >
+          {isFemale ? "F · Female" : "M · Male"}
+        </span>
+      ) : (
+        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-bold text-red-700 ring-1 ring-red-300">
+          Sex not set
+        </span>
+      )}
+      {military ? (
+        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 ring-1 ring-emerald-300">
+          ★ Military
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 type UpsellDist = { id: string; label: string; entry_fee_cents: number };
 type RollOpt = {
@@ -962,6 +996,9 @@ export function CheckInRunnerClient({
             <p className="text-xl font-bold text-[#1E3A5F] sm:text-2xl">
               {runner.profile.first_name} {runner.profile.last_name}
             </p>
+            <div className="mt-2">
+              <SexMilitaryBadges profile={runner.profile} />
+            </div>
             <p className="mt-1 text-sm text-[#1E3A5F]/65">{runner.profile.email}</p>
             {runner.membership ? (
               <p className="mt-1 text-xs text-[#1E3A5F]/55">

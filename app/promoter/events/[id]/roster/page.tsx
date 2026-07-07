@@ -23,6 +23,8 @@ type EntryRow = {
   paid_at: string | null;
   assigned_bib: string | null;
   kiosk_checked_in_at: string | null;
+  sex: string | null;
+  active_or_retired_military: boolean | null;
 };
 
 type ProfileRow = {
@@ -32,6 +34,8 @@ type ProfileRow = {
   email: string | null;
   phone: string | null;
   pr_id: string | null;
+  sex: string | null;
+  active_or_retired_military: boolean | null;
 };
 
 type RunnerGroup = {
@@ -45,6 +49,8 @@ type RunnerGroup = {
   prId: string | null;
   raceDayBib: string | null;
   paid: boolean;
+  sex: string | null;
+  military: boolean;
   distances: { label: string; checkedIn: boolean; entryType: string }[];
   fullyCheckedIn: boolean;
   anyCheckedIn: boolean;
@@ -75,7 +81,7 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
     service
       .from("entries")
       .select(
-        "id,user_id,email,first_name,last_name,distance_id,entry_type,entry_kind,paid_at,assigned_bib,kiosk_checked_in_at",
+        "id,user_id,email,first_name,last_name,distance_id,entry_type,entry_kind,paid_at,assigned_bib,kiosk_checked_in_at,sex,active_or_retired_military",
       )
       .eq("event_id", id),
   ]);
@@ -87,7 +93,10 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
   const userIds = [...new Set(entries.map((e) => e.user_id).filter((u): u is string => Boolean(u)))];
   const profilesRes =
     userIds.length > 0
-      ? await service.from("profiles").select("id,first_name,last_name,email,phone,pr_id").in("id", userIds)
+      ? await service
+          .from("profiles")
+          .select("id,first_name,last_name,email,phone,pr_id,sex,active_or_retired_military")
+          .in("id", userIds)
       : { data: [] };
   const profiles = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.id, p]));
 
@@ -123,6 +132,11 @@ export default async function EventRosterPage({ params }: { params: Promise<{ id
       prId: prof?.pr_id?.trim() || null,
       raceDayBib: list.map((e) => e.assigned_bib?.trim()).find((b) => b) ?? null,
       paid: list.some((e) => e.paid_at !== null || e.entry_kind === "comp"),
+      // Entry-level values (demo / entry-only runners) win; profile is the fallback.
+      sex: list.map((e) => e.sex).find((s) => s) ?? prof?.sex ?? null,
+      military:
+        list.some((e) => e.active_or_retired_military === true) ||
+        prof?.active_or_retired_military === true,
       distances: dists,
       fullyCheckedIn: dists.every((d) => d.checkedIn),
       anyCheckedIn: dists.some((d) => d.checkedIn),

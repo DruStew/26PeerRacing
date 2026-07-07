@@ -59,6 +59,8 @@ export async function loadDemoRunnerContext(
     phone: string;
     bib: string | null;
     assigned_bib?: string | null;
+    sex?: string | null;
+    active_or_retired_military?: boolean | null;
   };
 
   const { data: allEventEntries } = await admin.from("entries").select("*").eq("event_id", eventId);
@@ -145,6 +147,8 @@ export async function loadDemoRunnerContext(
       email: seed.email,
       phone: seed.phone,
       pr_id: displayBib,
+      sex: seed.sex ?? null,
+      active_or_retired_military: seed.active_or_retired_military ?? null,
     },
     profileComplete: true,
     membership: undefined,

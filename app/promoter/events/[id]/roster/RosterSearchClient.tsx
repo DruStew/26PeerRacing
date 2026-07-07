@@ -13,8 +13,41 @@ export type RosterRunner = {
   prId: string | null;
   raceDayBib: string | null;
   paid: boolean;
+  sex: string | null;
+  military: boolean;
   distances: { label: string; checkedIn: boolean; entryType: string }[];
 };
+
+/** Compact M/F + Military chips next to the runner's name for at-a-glance verification. */
+function SexMilitaryChips({ sex, military }: { sex: string | null; military: boolean }) {
+  const s = (sex ?? "").trim().toLowerCase();
+  const isFemale = s.startsWith("f");
+  const isMale = s.startsWith("m");
+  return (
+    <span className="inline-flex items-center gap-1 align-middle">
+      {isFemale || isMale ? (
+        <span
+          className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[11px] font-bold ring-1 ${
+            isFemale
+              ? "bg-pink-50 text-pink-700 ring-pink-300"
+              : "bg-sky-50 text-sky-700 ring-sky-300"
+          }`}
+        >
+          {isFemale ? "F" : "M"}
+        </span>
+      ) : (
+        <span className="inline-flex items-center rounded-full bg-red-50 px-1.5 py-0.5 text-[11px] font-bold text-red-700 ring-1 ring-red-300">
+          ?
+        </span>
+      )}
+      {military ? (
+        <span className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-300">
+          ★ MIL
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 type Selection = {
   selected: Set<string>;
@@ -94,7 +127,9 @@ function RunnerCards({
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-semibold text-[#1E3A5F]">{r.name}</p>
+                  <p className="font-semibold text-[#1E3A5F]">
+                    {r.name} <SexMilitaryChips sex={r.sex} military={r.military} />
+                  </p>
                   <p className="mt-0.5 text-xs text-[#1E3A5F]/60">
                     PR ID{" "}
                     <span className="font-mono font-semibold text-[#1E3A5F]">{r.prId ?? "—"}</span>
@@ -178,7 +213,9 @@ function RunnerTable({
                   />
                 </td>
               ) : null}
-              <td className="px-4 py-2.5 font-medium text-[#1E3A5F]">{r.name}</td>
+              <td className="px-4 py-2.5 font-medium text-[#1E3A5F]">
+                {r.name} <SexMilitaryChips sex={r.sex} military={r.military} />
+              </td>
               <td className="px-4 py-2.5 font-mono text-[#1E3A5F]">{r.prId ?? "—"}</td>
               <td className="px-4 py-2.5 font-mono text-[#1E3A5F]">{r.raceDayBib ?? "—"}</td>
               <td className="px-4 py-2.5">

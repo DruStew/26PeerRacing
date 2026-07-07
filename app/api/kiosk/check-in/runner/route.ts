@@ -265,6 +265,10 @@ export async function POST(request: Request) {
       email: (profile as { email?: string | null }).email ?? "",
       phone: (profile as { phone?: string | null }).phone ?? "",
       pr_id: (profile as { pr_id?: string | null }).pr_id ?? null,
+      sex: (profile as { sex?: string | null }).sex ?? null,
+      active_or_retired_military:
+        (profile as { active_or_retired_military?: boolean | null }).active_or_retired_military ??
+        null,
     },
     profileComplete: isProfileComplete(profile as ProfileRow),
     membership: {
