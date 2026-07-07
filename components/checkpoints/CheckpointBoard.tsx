@@ -103,7 +103,7 @@ export function CheckpointBoard({ eventId }: { eventId: string }) {
 
       {/* Entered racers — the board proper */}
       <div className="space-y-8">
-        <h2 className="font-display -mb-3 text-xl font-bold text-[#1E3A5F]">Entered Racers</h2>
+        <h2 className="font-display text-xl font-bold text-[#1E3A5F]">Entered Racers</h2>
         {distances
           .filter((d) => checkpoints.some((c) => c.distance_id === d.id))
           .map((d) => {
@@ -113,7 +113,9 @@ export function CheckpointBoard({ eventId }: { eventId: string }) {
             );
             return (
               <section key={d.id}>
-                <h3 className="font-display text-lg font-semibold text-[#1E3A5F]">{d.label}</h3>
+                <h3 className="font-display mb-3 border-b border-[#1E3A5F]/10 pb-2 text-lg font-semibold text-[#1E3A5F]">
+                  {d.label}
+                </h3>
                 {rows.length === 0 ? (
                   <p className="mt-2 rounded-xl border border-[#1E3A5F]/10 bg-white p-4 text-sm text-[#1E3A5F]/55">
                     No racer scans yet for this race.
