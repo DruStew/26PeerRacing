@@ -17,7 +17,7 @@ import {
   type CourseGeoJSON,
 } from "@/lib/mapbox/config";
 import { DEFAULT_PUBLIC_ROUTE, MY_ENTRIES_ROUTE } from "@/lib/routes";
-import { areEntriesOpenForEvent, finalDayIsOver } from "@/lib/event-entry-status";
+import { eventEntryWindowStatus, finalDayIsOver } from "@/lib/event-entry-status";
 import { buildEventShareText, eventPageMetadata } from "@/lib/event-share";
 import { distanceTierRequirementLabel } from "@/lib/membership-tiers";
 import { formatDistanceDisplay } from "@/lib/distance-display";
@@ -53,7 +53,7 @@ export async function generateMetadata({
   const supabase = await createServerSupabaseClient();
   const { data: event } = await supabase
     .from("events")
-    .select("name,city,state,race_date,artwork_url,pr_cutoff")
+    .select("name,city,state,race_date,artwork_url,pr_cutoff,entries_open_at")
     .eq("id", id)
     .single();
 
@@ -66,14 +66,16 @@ export async function generateMetadata({
     .select("pr_cutoff,results_published_at")
     .eq("event_id", id);
 
-  const entriesOpen = areEntriesOpenForEvent(
-    (event as { pr_cutoff?: string | null }).pr_cutoff ?? null,
-    (distances ?? []).map((d) => ({
-      pr_cutoff: d.pr_cutoff ?? null,
-      results_published_at:
-        (d as { results_published_at?: string | null }).results_published_at ?? null,
-    })),
-  );
+  const entriesOpen =
+    eventEntryWindowStatus(
+      (event as { entries_open_at?: string | null }).entries_open_at ?? null,
+      (event as { pr_cutoff?: string | null }).pr_cutoff ?? null,
+      (distances ?? []).map((d) => ({
+        pr_cutoff: d.pr_cutoff ?? null,
+        results_published_at:
+          (d as { results_published_at?: string | null }).results_published_at ?? null,
+      })),
+    ) === "open";
 
   const location = [event.city, event.state].filter(Boolean).join(", ") || null;
   const raceDateLabel = event.race_date ? formatCalendarDate(event.race_date) : null;
@@ -121,7 +123,8 @@ export default async function EventPage({
 
   const distanceRows = distances ?? [];
   const eventOnlineRegClosesAt = (event as { pr_cutoff?: string | null }).pr_cutoff ?? null;
-  const entriesOpen = areEntriesOpenForEvent(
+  const entryStatus = eventEntryWindowStatus(
+    (event as { entries_open_at?: string | null }).entries_open_at ?? null,
     eventOnlineRegClosesAt,
     distanceRows.map((d) => ({
       pr_cutoff: d.pr_cutoff ?? null,
@@ -129,8 +132,9 @@ export default async function EventPage({
         (d as { results_published_at?: string | null }).results_published_at ?? null,
     })),
   );
+  const entriesOpen = entryStatus === "open";
   const walkUpsStillAvailable =
-    !entriesOpen &&
+    entryStatus === "closed" &&
     !finalDayIsOver({
       race_date: event.race_date as string | null,
       end_date: (event as { end_date?: string | null }).end_date ?? null,
@@ -290,13 +294,29 @@ export default async function EventPage({
           <h1 className="font-display text-3xl font-bold tracking-tight text-[#1E3A5F] sm:text-4xl">
             {event.name}
           </h1>
-          {!entriesOpen ? (
+          {entryStatus === "closed" ? (
             <div
               role="alert"
               className="mt-4 rounded-lg border border-[#1E3A5F]/20 bg-[#1E3A5F] px-4 py-3.5 text-center shadow-md sm:px-5 sm:text-left"
             >
               <p className="font-display text-lg font-bold leading-snug text-white sm:text-xl">
                 Entries for This Race Are Closed
+              </p>
+            </div>
+          ) : entryStatus === "not_yet_open" && registrationOpensAt ? (
+            <div
+              role="status"
+              className="mt-4 rounded-lg border border-[#E87722]/30 bg-[#E87722]/10 px-4 py-3.5 text-center shadow-sm sm:px-5 sm:text-left"
+            >
+              <p className="font-display text-lg font-bold leading-snug text-[#1E3A5F] sm:text-xl">
+                Online registration opens{" "}
+                {registrationOpensAt.toLocaleString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
               </p>
             </div>
           ) : null}
@@ -380,12 +400,23 @@ export default async function EventPage({
                   Distances and entry fees for this event.
                 </p>
               </div>
-              {!entriesOpen ? (
+              {entryStatus === "closed" ? (
                 <p
                   className="shrink-0 rounded-md border border-[#1E3A5F]/25 bg-[#1E3A5F]/10 px-3 py-2 text-center font-display text-sm font-bold text-[#1E3A5F] sm:max-w-md sm:text-base"
                   aria-hidden="true"
                 >
                   Entries for This Race Are Closed
+                </p>
+              ) : entryStatus === "not_yet_open" && registrationOpensAt ? (
+                <p
+                  className="shrink-0 rounded-md border border-[#E87722]/30 bg-[#E87722]/10 px-3 py-2 text-center font-display text-sm font-bold text-[#1E3A5F] sm:max-w-md sm:text-base"
+                  aria-hidden="true"
+                >
+                  Registration opens{" "}
+                  {registrationOpensAt.toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}
                 </p>
               ) : null}
             </div>

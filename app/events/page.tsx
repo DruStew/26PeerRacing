@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { FlyerLightbox } from "@/components/events/FlyerLightbox";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { areEntriesOpenForEvent, finalDayIsOver } from "@/lib/event-entry-status";
+import { eventEntryWindowStatus, finalDayIsOver } from "@/lib/event-entry-status";
 import { formatDistanceDisplay } from "@/lib/distance-display";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
@@ -31,6 +31,13 @@ function formatEntryDeadline(value: string | null): string {
 
 function racerLabel(n: number): string {
   return n === 1 ? "1 racer" : `${n} racers`;
+}
+
+function formatOpensDate(value: string | null): string {
+  if (!value) return "soon";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "soon";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 type DistanceRow = {
@@ -91,7 +98,7 @@ export default async function EventsPage({
   // and surface on the public Race Results index instead.
   const { data: events } = await supabaseServer
     .from("events")
-    .select("id,name,city,state,race_date,end_date,pr_cutoff")
+    .select("id,name,city,state,race_date,end_date,pr_cutoff,entries_open_at")
     .eq("status", "published")
     .order("race_date", { ascending: true });
 
@@ -197,10 +204,13 @@ export default async function EventsPage({
                   distancesByEvent.get(event.id) ?? [],
                 );
                 const eventPrCutoff = (event as { pr_cutoff?: string | null }).pr_cutoff ?? null;
+                const entriesOpenAt =
+                  (event as { entries_open_at?: string | null }).entries_open_at ?? null;
                 const listDeadline = earliestOnlineRegClose(eventPrCutoff, distances);
-                const entriesOpen = areEntriesOpenForEvent(eventPrCutoff, distances);
+                const entryStatus = eventEntryWindowStatus(entriesOpenAt, eventPrCutoff, distances);
+                const entriesOpen = entryStatus === "open";
                 const walkUpsAvailable =
-                  !entriesOpen &&
+                  entryStatus === "closed" &&
                   distances.some((d) => !d.results_published_at && d.allow_walk_ups !== false);
                 const dCounts = countByEventDistance.get(event.id);
                 const artworkUrl = (event as { artwork_url?: string | null }).artwork_url ?? null;
@@ -209,7 +219,7 @@ export default async function EventsPage({
                   <li key={event.id}>
                     <div
                       className={`flex flex-col gap-4 rounded-xl border bg-white p-5 shadow-sm transition-all hover:shadow-md sm:flex-row sm:items-start sm:justify-between ${
-                        entriesOpen || walkUpsAvailable
+                        entriesOpen || walkUpsAvailable || entryStatus === "not_yet_open"
                           ? "border-[#1E3A5F]/10 hover:border-[#E87722]/50"
                           : "border-[#1E3A5F]/15 bg-[#fafbfc] hover:border-[#1E3A5F]/25"
                       }`}
@@ -230,7 +240,11 @@ export default async function EventsPage({
                             <h2 className="font-display text-xl font-semibold text-[#1E3A5F] transition-colors group-hover:text-[#E87722]">
                               {event.name}
                             </h2>
-                            {entriesOpen ? (
+                            {entryStatus === "not_yet_open" ? (
+                              <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 ring-1 ring-sky-600/20">
+                                Registration opens {formatOpensDate(entriesOpenAt)}
+                              </span>
+                            ) : entriesOpen ? (
                               <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 ring-1 ring-emerald-600/15">
                                 Entries open
                               </span>
@@ -302,7 +316,9 @@ export default async function EventsPage({
                                   d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                                 />
                               </svg>
-                              Online reg closes: {formatEntryDeadline(listDeadline)}
+                              {entryStatus === "not_yet_open"
+                                ? `Online reg opens: ${formatEntryDeadline(entriesOpenAt)}`
+                                : `Online reg closes: ${formatEntryDeadline(listDeadline)}`}
                             </span>
                           </div>
                           {distances.length > 0 ? (

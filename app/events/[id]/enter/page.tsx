@@ -47,12 +47,22 @@ export default async function EnterEventPage({
 
   const { data: event, error } = await supabase
     .from("events")
-    .select("id,name,city,state,race_date,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links")
+    .select("id,name,city,state,race_date,venue_name,venue_address,venue_lat,venue_lng,race_day_notes,race_day_links,entries_open_at")
     .eq("id", id)
     .single();
 
   if (error || !event) {
     notFound();
+  }
+
+  // Online registration hasn't opened yet — send them back to the event page,
+  // which shows the opening date (the enter API enforces this too).
+  const entriesOpenAtRaw = (event as { entries_open_at?: string | null }).entries_open_at;
+  if (entriesOpenAtRaw) {
+    const opensAt = new Date(entriesOpenAtRaw);
+    if (!Number.isNaN(opensAt.getTime()) && Date.now() < opensAt.getTime()) {
+      redirect(`/events/${id}`);
+    }
   }
 
   const { data: profile } = await supabase

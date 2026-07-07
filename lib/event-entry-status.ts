@@ -16,9 +16,30 @@ export function finalDayIsOver(event: {
   return Date.now() > endUtc + US_WESTMOST_UTC_OFFSET_MS;
 }
 
+export type EventEntryWindowStatus = "not_yet_open" | "open" | "closed";
+
+/**
+ * Full online-registration window status for an event: not yet open
+ * (entries_open_at is in the future), open, or closed. Keep every surface
+ * (Find a Race badge, event page, enter API) consistent with this.
+ */
+export function eventEntryWindowStatus(
+  entriesOpenAt: string | null,
+  eventPrCutoff: string | null,
+  distances: { pr_cutoff: string | null; results_published_at?: string | null }[],
+): EventEntryWindowStatus {
+  if (entriesOpenAt) {
+    const t = new Date(entriesOpenAt).getTime();
+    if (!Number.isNaN(t) && Date.now() < t) return "not_yet_open";
+  }
+  return areEntriesOpenForEvent(eventPrCutoff, distances) ? "open" : "closed";
+}
+
 /**
  * Whether at least one race distance still accepts entries (matches enter API cutoff logic).
  * Publishing results closes a distance for good, regardless of its entry deadline.
+ * NOTE: this only checks the *close* side — prefer eventEntryWindowStatus, which
+ * also honors entries_open_at.
  */
 export function areEntriesOpenForEvent(
   eventPrCutoff: string | null,
