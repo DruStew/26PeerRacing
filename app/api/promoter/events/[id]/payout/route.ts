@@ -98,11 +98,16 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   // so an embedded join silently returns nothing.
   const { data: entriesForCheckIn } = await service
     .from("entries")
-    .select("user_id,kiosk_checked_in_at")
+    .select("user_id,kiosk_checked_in_at,sex,active_or_retired_military")
     .eq("event_id", eventId)
     .eq("distance_id", distanceId);
 
-  const entryRows = (entriesForCheckIn ?? []) as { user_id: string | null; kiosk_checked_in_at: string | null }[];
+  const entryRows = (entriesForCheckIn ?? []) as {
+    user_id: string | null;
+    kiosk_checked_in_at: string | null;
+    sex: string | null;
+    active_or_retired_military: boolean | null;
+  }[];
   const profileIds = [...new Set(entryRows.map((e) => e.user_id).filter((u): u is string => Boolean(u)))];
   const profilesRes =
     profileIds.length > 0
@@ -121,12 +126,15 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   let checkedInMilitaryCount = 0;
   for (const r of entryRows) {
     const p = r.user_id ? profileById.get(r.user_id) : undefined;
-    if (p?.sex === "female") femaleEntryCount += 1;
-    if (p?.active_or_retired_military === true) militaryEntryCount += 1;
+    // Entry-level values (demo / entry-only runners) win; profile is the fallback.
+    const isFemale = (r.sex ?? p?.sex) === "female";
+    const isMilitary = (r.active_or_retired_military ?? p?.active_or_retired_military) === true;
+    if (isFemale) femaleEntryCount += 1;
+    if (isMilitary) militaryEntryCount += 1;
     if (!r.kiosk_checked_in_at) continue;
     checkedInCount += 1;
-    if (p?.sex === "female") checkedInFemaleCount += 1;
-    if (p?.active_or_retired_military === true) checkedInMilitaryCount += 1;
+    if (isFemale) checkedInFemaleCount += 1;
+    if (isMilitary) checkedInMilitaryCount += 1;
   }
 
   return NextResponse.json({

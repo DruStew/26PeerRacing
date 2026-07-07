@@ -93,12 +93,13 @@ export async function loadFinishersForDistance(
       sex: string | null;
       bib: string | null;
       assigned_bib: string | null;
+      active_or_retired_military: boolean | null;
     }
   >();
   for (let i = 0; i < entryIds.length; i += 500) {
     const { data: entries } = await service
       .from("entries")
-      .select("id,user_id,first_name,last_name,dob,sex,bib,assigned_bib")
+      .select("id,user_id,first_name,last_name,dob,sex,bib,assigned_bib,active_or_retired_military")
       .in("id", entryIds.slice(i, i + 500));
     for (const e of (entries ?? []) as Array<(typeof entryById extends Map<string, infer V> ? V : never)>) {
       entryById.set(e.id, e);
@@ -145,7 +146,9 @@ export async function loadFinishersForDistance(
       age: ageOn(entry.dob, raceDate),
       sex: (entry.sex ?? "").toLowerCase().startsWith("f") ? "Female" : "Male",
       timeS: Math.round(timeMs / 1000),
-      military: profile?.active_or_retired_military === true,
+      // Entry-level flag (demo / entry-only runners) wins; profile is the fallback.
+      military:
+        entry.active_or_retired_military ?? profile?.active_or_retired_military ?? false,
     });
   }
 

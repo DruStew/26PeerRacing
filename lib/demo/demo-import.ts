@@ -139,11 +139,21 @@ export async function runDemoImport(
 
   const entryRows: Array<Record<string, unknown>> = [];
   const seenInFile = new Set<string>();
+  // Re-importing the same roster updates the military flag on existing entries
+  // (e.g. the first upload was missing the military column). Grouped per
+  // distance + flag so it's a handful of UPDATEs, not one per row.
+  const militaryUpdates = new Map<string, { distanceId: string; flag: boolean; emails: string[] }>();
 
   for (const pr of prepared) {
     const key = `${pr.emailNorm}|${pr.distance_id}`;
     if (existingInDb.has(key)) {
       entriesSkippedAlreadyRegistered += 1;
+      const gKey = `${pr.distance_id}|${pr.active_or_retired_military}`;
+      const group =
+        militaryUpdates.get(gKey) ??
+        { distanceId: pr.distance_id, flag: pr.active_or_retired_military, emails: [] };
+      group.emails.push(pr.emailNorm);
+      militaryUpdates.set(gKey, group);
       continue;
     }
     if (seenInFile.has(key)) {
@@ -162,6 +172,7 @@ export async function runDemoImport(
       email: pr.emailNorm,
       dob: pr.dob,
       sex: pr.sex,
+      active_or_retired_military: pr.active_or_retired_military,
       bib: pr.bib,
       transponder_1: pr.transponder_1,
       transponder_2: pr.transponder_2,
@@ -192,6 +203,21 @@ export async function runDemoImport(
       };
     }
     entriesInserted += chunk.length;
+  }
+
+  for (const group of militaryUpdates.values()) {
+    for (let i = 0; i < group.emails.length; i += DB_WRITE_CHUNK) {
+      const emails = group.emails.slice(i, i + DB_WRITE_CHUNK);
+      const { error } = await service
+        .from("entries")
+        .update({ active_or_retired_military: group.flag })
+        .eq("event_id", eventId)
+        .eq("distance_id", group.distanceId)
+        .in("email", emails);
+      if (error) {
+        rowErrors.push({ row: 0, message: `Military flag update: ${error.message}` });
+      }
+    }
   }
 
   return {
