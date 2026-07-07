@@ -192,6 +192,8 @@ export async function renderShareCard(
   if (!ctx) throw new Error("Canvas not supported.");
 
   const logo = await loadImage("/PR_primarylogo.svg");
+  // Footer sits on a dark strip, so use the grey logo there for contrast.
+  const footerLogo = await loadImage("/PR_primarylogo_grey.svg").catch(() => logo);
   const badgeImg =
     data.kind === "finish" && data.division && BADGE_SRC[data.division]
       ? await loadImage(BADGE_SRC[data.division])
@@ -282,8 +284,8 @@ export async function renderShareCard(
   ctx.fillRect(0, footerY, W, footerH);
   // PR logo left
   const fLogoH = 56;
-  const fLogoW = (fLogoH / logo.naturalHeight) * logo.naturalWidth;
-  ctx.drawImage(logo, M, footerY + (footerH - fLogoH) / 2, fLogoW, fLogoH);
+  const fLogoW = (fLogoH / footerLogo.naturalHeight) * footerLogo.naturalWidth;
+  ctx.drawImage(footerLogo, M, footerY + (footerH - fLogoH) / 2, fLogoW, fLogoH);
   // Sponsor right
   if (sponsorImg) {
     const label = "PR RESULTS POWERED BY";
