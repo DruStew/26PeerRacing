@@ -309,22 +309,23 @@ export async function renderShareCard(
   ctx.fillRect(railW, 0, 5, H);
   ctx.fillRect(W - railW - 5, 0, 5, H);
 
-  // ---- header --------------------------------------------------------------
-  const headerH = 150;
-  ctx.fillStyle = NAVY;
+  // ---- header ----------------------------------------------------------------
+  // Light grey bar so the full-color PR logo (orange + navy) leads the card.
+  const headerH = 168;
+  ctx.fillStyle = "#eef1f4";
   ctx.fillRect(0, 0, W, headerH);
   // accent bottom edge
   ctx.fillStyle = theme.base;
   ctx.fillRect(0, headerH, W, 5);
 
-  // PR grey logo, left
-  const hLogoH = 84;
-  const hLogoW = (hLogoH / greyLogo.naturalHeight) * greyLogo.naturalWidth;
-  ctx.drawImage(greyLogo, 44, (headerH - hLogoH) / 2, hLogoW, hLogoH);
+  // Full-color PR logo, big and left
+  const hLogoH = 122;
+  const hLogoW = (hLogoH / logo.naturalHeight) * logo.naturalWidth;
+  ctx.drawImage(logo, 44, (headerH - hLogoH) / 2, hLogoW, hLogoH);
 
-  // Event name
-  const evX = 44 + hLogoW + 40;
-  ctx.fillStyle = "#ffffff";
+  // Event name in navy on the light bar
+  const evX = 44 + hLogoW + 44;
+  ctx.fillStyle = NAVY;
   fitText(ctx, data.eventName.toUpperCase(), 62, W - evX - 48);
   ctx.fillText(data.eventName.toUpperCase(), evX, headerH / 2 + 24);
 
