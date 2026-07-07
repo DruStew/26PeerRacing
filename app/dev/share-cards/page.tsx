@@ -1,48 +1,60 @@
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { SHARE_CARD_TEMPLATES } from "@/components/share/ShareCardTemplates";
-import type { ShareCardData } from "@/components/share/ShareCardTemplates";
+import { ShareCardStudio } from "@/components/share/ShareCardStudio";
+import type { ShareCardData } from "@/lib/share/share-card";
 
 /**
- * Design playground for the race-finish share cards (overlay the racer's photo gets
- * when they snap a race-day pic in the app). Placeholder layouts — final designs TBD.
+ * Design playground for the racer share graphics — renders the real canvas
+ * studio with sample data so layout changes can be checked without digging up
+ * a published result.
  */
 
-const SAMPLES: ShareCardData[] = [
+const SAMPLES: Array<{ title: string; data: ShareCardData }> = [
   {
-    firstName: "Jordan",
-    lastName: "Reed",
-    raceName: "50 Miler",
-    eventName: "Frostbite Festival",
-    timeRaw: "7:42:18",
-    overallPlace: 3,
-    division: "Alpha",
-    divisionPlace: 3,
-    payoutCents: 41200,
-    eventTotalPayoutCents: 1240000,
+    title: "Finish — big winner (all stats)",
+    data: {
+      kind: "finish",
+      eventName: "Frostbite Festival",
+      distanceLabel: "50 Miler",
+      runnerName: "Jordan Reed",
+      timeText: "7:42:18",
+      division: "Alpha",
+      divisionPlaceText: "1ST",
+      overallText: "3RD OF 58 OVERALL",
+      femalePoolText: "2ND FEMALE POOL · $180.00",
+      militaryPoolText: "1ST MILITARY POOL · $240.00",
+      moneyLines: [{ label: "ALPHA DIVISION", amountText: "$412.00" }],
+      totalWonText: "$832.00",
+      sponsorLogoUrl: null,
+    },
   },
   {
-    firstName: "Casey",
-    lastName: "Torres",
-    raceName: "Half Marathon",
-    eventName: "Frostbite Festival",
-    timeRaw: "2:18:09",
-    overallPlace: 41,
-    division: "Charlie",
-    divisionPlace: 2,
-    payoutCents: 23000,
-    eventTotalPayoutCents: 1240000,
+    title: "Finish — mid-pack, no money",
+    data: {
+      kind: "finish",
+      eventName: "Black Hills Backcountry Ultra",
+      distanceLabel: "Half Marathon",
+      runnerName: "Casey Torres",
+      timeText: "2:18:09",
+      division: "Charlie",
+      divisionPlaceText: "14TH",
+      overallText: "41ST OF 122 OVERALL",
+      femalePoolText: null,
+      militaryPoolText: null,
+      moneyLines: [],
+      totalWonText: null,
+      // Stand-in sponsor so the "PR Results powered by" footer slot is visible.
+      sponsorLogoUrl: "/PR_primarylogo.svg",
+    },
   },
   {
-    firstName: "Sage",
-    lastName: "Nguyen",
-    raceName: "10K",
-    eventName: "Frostbite Festival",
-    timeRaw: "1:21:44",
-    overallPlace: 88,
-    division: "Echo",
-    divisionPlace: 1,
-    payoutCents: 18500,
-    eventTotalPayoutCents: 1240000,
+    title: "Race day",
+    data: {
+      kind: "raceday",
+      eventName: "Frostbite Festival",
+      distanceLabel: "50 Miler",
+      runnerName: "Jordan Reed",
+      sponsorLogoUrl: null,
+    },
   },
 ];
 
@@ -55,26 +67,19 @@ export default function ShareCardPlaygroundPage() {
           Design playground
         </p>
         <h1 className="font-display mt-2 text-3xl font-bold tracking-tight text-[#1E3A5F]">
-          Race-finish share cards
+          Racer share graphics
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#1E3A5F]/70">
-          Placeholder layouts for the photo overlay racers get after results publish: snap a race-day
-          pic, the card composites on top, share to socials. Money is always shown — transparency is
-          the brand. Five rough slot layouts below, each shown with three sample racers; real designs
-          replace these.
+          The real share studio with sample data. Racers see this on My Results (finish) and My
+          Entries (race day) with their own numbers.
         </p>
 
         <div className="mt-10 space-y-12">
-          {SHARE_CARD_TEMPLATES.map(({ id, name, Component }) => (
-            <section key={id}>
-              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">
-                {name}
-                <span className="ml-2 font-mono text-xs font-normal text-[#1E3A5F]/50">{id}</span>
-              </h2>
-              <div className="mt-4 flex flex-wrap gap-6">
-                {SAMPLES.map((d) => (
-                  <Component key={`${id}-${d.firstName}`} d={d} />
-                ))}
+          {SAMPLES.map(({ title, data }) => (
+            <section key={title}>
+              <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">{title}</h2>
+              <div className="mt-4">
+                <ShareCardStudio data={data} fileBase="sample" />
               </div>
             </section>
           ))}

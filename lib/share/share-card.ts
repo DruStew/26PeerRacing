@@ -207,23 +207,77 @@ export async function renderShareCard(
     drawNoPhotoBackground(ctx, W, H, logo);
   }
 
-  // ---- bottom gradient panel -------------------------------------------
-  const panelH = data.kind === "finish" ? Math.round(H * 0.4) : Math.round(H * 0.3);
-  const gradTop = H - panelH - 140;
-  const grad = ctx.createLinearGradient(0, gradTop, 0, H - panelH + 80);
+  const M = 56; // side margin
+  const footerH = 108;
+  const footerY = H - footerH;
+  ctx.textBaseline = "alphabetic";
+
+  // ---- measure the content stack (bottom-up layout) ----------------------
+  // Row heights include their own top spacing so the stack never collides
+  // with the footer regardless of how many stats this racer has.
+  const badgeSize = 300;
+  const textMaxW = data.kind === "finish" && badgeImg ? W - M * 2 - badgeSize + 10 : W - M * 2;
+
+  let chipLines = 0;
+  let chipTexts: Array<{ text: string; bg: string; fg: string }> = [];
+  const chipPx = 26;
+  const chipH = chipPx * 1.9;
+  const chipGap = 14;
+  if (data.kind === "finish") {
+    chipTexts = [];
+    if (data.overallText)
+      chipTexts.push({ text: data.overallText, bg: "rgba(255,255,255,0.14)", fg: "#ffffff" });
+    for (const m of data.moneyLines) {
+      chipTexts.push({
+        text: m.amountText ? `${m.label} · ${m.amountText}` : m.label,
+        bg: "rgba(255,255,255,0.14)",
+        fg: "#ffffff",
+      });
+    }
+    if (data.femalePoolText)
+      chipTexts.push({ text: data.femalePoolText, bg: "rgba(214,51,108,0.85)", fg: "#ffffff" });
+    if (data.militaryPoolText)
+      chipTexts.push({ text: data.militaryPoolText, bg: "rgba(92,107,47,0.9)", fg: "#ffffff" });
+    if (chipTexts.length > 0) {
+      chipLines = 1;
+      ctx.font = font(chipPx);
+      let cx = M;
+      for (const chip of chipTexts) {
+        const cw = ctx.measureText(chip.text).width + chipPx * 1.4;
+        if (cx + cw > W - M) {
+          chipLines += 1;
+          cx = M;
+        }
+        cx += cw + chipGap;
+      }
+    }
+  }
+
+  let stackH = 0;
+  if (data.kind === "finish") {
+    stackH += 30 + 8; // kicker
+    stackH += 56 + 26; // headline
+    if (data.timeText) stackH += 128 + 30;
+    if (data.division) stackH += 46 + 26;
+    if (data.totalWonText) stackH += 96 + 30;
+    if (chipLines > 0) stackH += chipLines * (chipH + chipGap);
+  } else {
+    stackH = 108 + 40 + 66 + 30 + 54 + 24; // headline + event + distance
+    if (data.runnerName) stackH += 34 + 26;
+  }
+
+  // ---- bottom gradient panel ---------------------------------------------
+  const panelTop = footerY - stackH - 44;
+  const gradStart = panelTop - 220;
+  const grad = ctx.createLinearGradient(0, gradStart, 0, panelTop);
   grad.addColorStop(0, "rgba(0,28,44,0)");
   grad.addColorStop(1, "rgba(0,28,44,0.94)");
   ctx.fillStyle = grad;
-  ctx.fillRect(0, gradTop, W, H - panelH + 80 - gradTop);
+  ctx.fillRect(0, gradStart, W, panelTop - gradStart);
   ctx.fillStyle = "rgba(0,28,44,0.94)";
-  ctx.fillRect(0, H - panelH + 79, W, panelH - 79 + 1);
-
-  const M = 56; // side margin
-  ctx.textBaseline = "alphabetic";
+  ctx.fillRect(0, panelTop - 1, W, H - panelTop + 1);
 
   // ---- footer bar (both kinds) ------------------------------------------
-  const footerH = 108;
-  const footerY = H - footerH;
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.fillRect(0, footerY, W, footerH);
   // PR logo left
@@ -279,11 +333,10 @@ export async function renderShareCard(
   }
 
   // ---- finish card ----------------------------------------------------------
-  const badgeSize = 300;
-  const badgeX = W - M - badgeSize + 24;
-  const badgeY = H - panelH - badgeSize / 2 - 30;
-  // Badge hero (floats over the gradient edge, right side)
+  // Badge hero floats over the gradient edge, right side.
   if (badgeImg) {
+    const badgeX = W - M - badgeSize + 24;
+    const badgeY = panelTop - badgeSize / 2 - 30;
     ctx.save();
     ctx.shadowColor = "rgba(0,0,0,0.55)";
     ctx.shadowBlur = 44;
@@ -293,8 +346,7 @@ export async function renderShareCard(
     ctx.restore();
   }
 
-  let y = H - panelH + 60;
-  const textMaxW = badgeImg ? W - M * 2 - badgeSize + 10 : W - M * 2;
+  let y = panelTop + 38;
 
   // Event · distance kicker
   ctx.fillStyle = "rgba(255,255,255,0.8)";
@@ -346,33 +398,19 @@ export async function renderShareCard(
     ctx.restore();
   }
 
-  // Stat chips (wrap across lines)
-  const chips: Array<{ text: string; bg: string; fg: string }> = [];
-  if (data.overallText) chips.push({ text: data.overallText, bg: "rgba(255,255,255,0.14)", fg: "#ffffff" });
-  for (const m of data.moneyLines) {
-    chips.push({
-      text: m.amountText ? `${m.label} · ${m.amountText}` : m.label,
-      bg: "rgba(255,255,255,0.14)",
-      fg: "#ffffff",
-    });
-  }
-  if (data.femalePoolText) chips.push({ text: data.femalePoolText, bg: "rgba(214,51,108,0.85)", fg: "#ffffff" });
-  if (data.militaryPoolText) chips.push({ text: data.militaryPoolText, bg: "rgba(92,107,47,0.9)", fg: "#ffffff" });
-
-  if (chips.length > 0) {
+  // Stat chips (wrap across lines; heights were pre-measured into the panel)
+  if (chipTexts.length > 0) {
     let cx = M;
     let cy = y + 44;
-    const chipPx = 26;
-    const gap = 14;
-    for (const chip of chips) {
+    for (const chip of chipTexts) {
       ctx.font = font(chipPx);
       const cw = ctx.measureText(chip.text).width + chipPx * 1.4;
       if (cx + cw > W - M) {
         cx = M;
-        cy += chipPx * 1.9 + gap;
+        cy += chipH + chipGap;
       }
-      if (cy + chipPx * 1.9 > footerY - 10) break; // never collide with the footer
-      cx += drawChip(ctx, chip.text, cx, cy, { bg: chip.bg, fg: chip.fg, px: chipPx }) + gap;
+      if (cy + chipH > footerY - 8) break; // never collide with the footer
+      cx += drawChip(ctx, chip.text, cx, cy, { bg: chip.bg, fg: chip.fg, px: chipPx }) + chipGap;
     }
     ctx.textBaseline = "alphabetic";
   }

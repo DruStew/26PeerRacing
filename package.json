@@ -53,6 +53,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "playwright": "^1.61.1",
     "postcss": "^8",
     "supabase": "^2.98.2",
     "tailwindcss": "^4",
