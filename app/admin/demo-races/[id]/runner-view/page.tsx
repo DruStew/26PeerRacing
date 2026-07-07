@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { DivisionBadge } from "@/components/results/DivisionBadge";
-import { loadDemoRunnerView } from "@/lib/demo/runner-view";
+import { loadDemoRunnerIndex, loadDemoRunnerView } from "@/lib/demo/runner-view";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { formatFinishTime, formatUsd, ordinal } from "@/lib/results-racer";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -39,30 +39,7 @@ export default async function DemoRunnerViewPage({
     throw new Error("Server is missing SUPABASE_SERVICE_ROLE_KEY.");
   }
 
-  // One row per person (demo runners group by email; first entry is the seed).
-  const { data: entriesRaw } = await service
-    .from("entries")
-    .select("id,email,first_name,last_name")
-    .eq("event_id", id)
-    .order("last_name", { ascending: true });
-  const seen = new Set<string>();
-  const people: Array<{ entryId: string; name: string }> = [];
-  for (const e of (entriesRaw ?? []) as Array<{
-    id: string;
-    email: string | null;
-    first_name: string | null;
-    last_name: string | null;
-  }>) {
-    const key = e.email?.trim().toLowerCase() || e.id;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    people.push({
-      entryId: e.id,
-      name: `${e.first_name ?? ""} ${e.last_name ?? ""}`.trim() || "(no name)",
-    });
-  }
-  people.sort((a, b) => a.name.localeCompare(b.name));
-
+  const people = await loadDemoRunnerIndex(service, id);
   const view = selectedEntryId ? await loadDemoRunnerView(service, id, selectedEntryId) : null;
   const location = [event.city, event.state].filter(Boolean).join(", ");
 
@@ -88,29 +65,106 @@ export default async function DemoRunnerViewPage({
 
       <section className="mt-8">
         <h2 className="text-sm font-semibold text-[#1E3A5F]">
-          Pick a runner ({people.length})
+          Pick a runner ({people.length}) — winners sorted to the top
         </h2>
-        <div className="mt-3 flex max-h-64 flex-wrap gap-2 overflow-y-auto rounded-xl border border-[#1E3A5F]/10 bg-white p-4">
-          {people.length === 0 ? (
-            <p className="text-sm text-[#1E3A5F]/60">
-              No participants yet — import a roster from the demo hub first.
-            </p>
-          ) : (
-            people.map((p) => (
-              <Link
-                key={p.entryId}
-                href={`/admin/demo-races/${id}/runner-view?entry=${p.entryId}`}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 transition-colors ${
-                  selectedEntryId === p.entryId
-                    ? "bg-[#E87722] text-white ring-[#E87722]"
-                    : "bg-white text-[#1E3A5F] ring-[#1E3A5F]/15 hover:ring-[#E87722]/50"
-                }`}
-              >
-                {p.name}
-              </Link>
-            ))
-          )}
-        </div>
+        {people.length === 0 ? (
+          <p className="mt-3 rounded-xl border border-[#1E3A5F]/10 bg-white p-4 text-sm text-[#1E3A5F]/60">
+            No participants yet — import a roster from the demo hub first.
+          </p>
+        ) : (
+          <div className="mt-3 max-h-[28rem] overflow-y-auto rounded-xl border border-[#1E3A5F]/10 bg-white">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="sticky top-0 bg-white shadow-[0_1px_0_rgba(30,58,95,0.1)]">
+                <tr className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">
+                  <th className="px-4 py-2.5">Runner</th>
+                  <th className="px-4 py-2.5">Bib</th>
+                  <th className="px-4 py-2.5">Races & placement</th>
+                  <th className="px-4 py-2.5 text-right">Won</th>
+                  <th className="px-4 py-2.5" aria-label="View" />
+                </tr>
+              </thead>
+              <tbody>
+                {people.map((p) => {
+                  const isSelected = selectedEntryId === p.entryId;
+                  return (
+                    <tr
+                      key={p.entryId}
+                      className={`border-t border-[#1E3A5F]/5 transition-colors hover:bg-[#fafbfc] ${
+                        isSelected ? "bg-[#E87722]/10" : ""
+                      }`}
+                    >
+                      <td className="px-4 py-2.5 font-medium text-[#1E3A5F]">
+                        <Link
+                          href={`/admin/demo-races/${id}/runner-view?entry=${p.entryId}`}
+                          className="hover:text-[#E87722]"
+                        >
+                          {p.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-2.5 font-mono text-[#1E3A5F]/80">{p.bib ?? "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          {p.races.map((race, i) => {
+                            const placedHere =
+                              race.divisionPlace != null ||
+                              race.femaleIncentivePlace != null ||
+                              race.militaryIncentivePlace != null;
+                            const parts = [
+                              race.division && race.divisionPlace
+                                ? `${race.division} ${ordinal(race.divisionPlace)}`
+                                : null,
+                              race.femaleIncentivePlace != null
+                                ? `F-pool ${ordinal(race.femaleIncentivePlace)}`
+                                : null,
+                              race.militaryIncentivePlace != null
+                                ? `Mil ${ordinal(race.militaryIncentivePlace)}`
+                                : null,
+                            ].filter(Boolean);
+                            return (
+                              <span
+                                key={`${p.entryId}-${i}`}
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${
+                                  placedHere
+                                    ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                                    : race.finishTimeMs != null
+                                      ? "bg-[#1E3A5F]/5 text-[#1E3A5F]/80 ring-[#1E3A5F]/15"
+                                      : "bg-amber-50 text-amber-800 ring-amber-200"
+                                }`}
+                              >
+                                {race.distanceLabel}
+                                {race.finishTimeMs != null
+                                  ? ` · ${formatFinishTime(race.finishTimeMs)}`
+                                  : " · no time"}
+                                {parts.length > 0 ? ` · ${parts.join(" · ")}` : ""}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {p.totalWonCents > 0 ? (
+                          <span className="font-semibold text-[#E87722]">
+                            {formatUsd(p.totalWonCents)}
+                          </span>
+                        ) : (
+                          <span className="text-[#1E3A5F]/40">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <Link
+                          href={`/admin/demo-races/${id}/runner-view?entry=${p.entryId}`}
+                          className="rounded-md bg-[#E87722] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#E87722]/90"
+                        >
+                          View
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       {selectedEntryId && !view ? (
