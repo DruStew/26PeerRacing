@@ -9,6 +9,8 @@ try {
 }
 
 const nextConfig: NextConfig = {
+  // Native module (QR sign PNG rendering) — must stay external, bundlers can't inline it.
+  serverExternalPackages: ["@resvg/resvg-js"],
   images: {
     remotePatterns: supabaseHostname
       ? [
