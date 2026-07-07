@@ -134,24 +134,29 @@ function paraPath(
   ctx.closePath();
 }
 
-/** Branded background when the racer skips the photo. */
+/**
+ * Branded background when the racer skips the photo — light grey with subtle
+ * speed streaks so the full-color PR logo (orange + navy) pops.
+ */
 function drawNoPhotoBackground(ctx: CanvasRenderingContext2D, w: number, h: number, logo: HTMLImageElement) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, "#0d4666");
-  g.addColorStop(0.55, "#0a3652");
-  g.addColorStop(1, "#062338");
+  g.addColorStop(0, "#f4f6f8");
+  g.addColorStop(0.5, "#e8ecf0");
+  g.addColorStop(1, "#d9dfe6");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 
-  // Diagonal speed stripes
+  // Diagonal speed streaks in soft navy / orange tints
   ctx.save();
   ctx.translate(w / 2, h / 2);
   ctx.rotate(-0.32);
   const stripes: Array<[number, number, string]> = [
-    [-h, 90, "rgba(242,104,34,0.14)"],
-    [-h + 150, 34, "rgba(242,104,34,0.26)"],
-    [h * 0.1, 120, "rgba(255,255,255,0.05)"],
-    [h * 0.28, 46, "rgba(242,104,34,0.2)"],
+    [-h, 110, "rgba(11,39,64,0.06)"],
+    [-h + 170, 36, "rgba(242,104,34,0.12)"],
+    [-h * 0.35, 70, "rgba(11,39,64,0.045)"],
+    [h * 0.08, 130, "rgba(11,39,64,0.07)"],
+    [h * 0.28, 44, "rgba(242,104,34,0.14)"],
+    [h * 0.44, 90, "rgba(11,39,64,0.05)"],
   ];
   for (const [y, sh, color] of stripes) {
     ctx.fillStyle = color;
@@ -159,12 +164,13 @@ function drawNoPhotoBackground(ctx: CanvasRenderingContext2D, w: number, h: numb
   }
   ctx.restore();
 
-  // Big PR logo in the middle of the photo window
-  const logoW = w * 0.56;
+  // Big full-color PR logo in the middle of the photo window
+  const logoW = w * 0.62;
   const logoH = (logoW / logo.naturalWidth) * logo.naturalHeight;
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.45)";
-  ctx.shadowBlur = 60;
+  ctx.shadowColor = "rgba(11,39,64,0.25)";
+  ctx.shadowBlur = 50;
+  ctx.shadowOffsetY = 12;
   ctx.drawImage(logo, (w - logoW) / 2, h * 0.36, logoW, logoH);
   ctx.restore();
 }
