@@ -33,23 +33,23 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     checkpoint_scans_public: boolean;
   };
 
-  if (!event.checkpoint_scans_public) {
-    const supabase = await createServerSupabaseClient();
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user?.id;
-    let allowed = uid === event.promoter_id;
-    if (!allowed && uid) {
-      const { data: admin } = await supabase
-        .from("roles")
-        .select("role")
-        .eq("user_id", uid)
-        .eq("role", "admin")
-        .maybeSingle();
-      allowed = !!admin;
-    }
-    if (!allowed) {
-      return NextResponse.json({ ok: false, error: "This board is not public." }, { status: 403 });
-    }
+  // Managers (promoter/admin) always have access and additionally see guests;
+  // the public view (when enabled) shows entered racers only.
+  const supabase = await createServerSupabaseClient();
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  let isManager = uid === event.promoter_id;
+  if (!isManager && uid) {
+    const { data: admin } = await supabase
+      .from("roles")
+      .select("role")
+      .eq("user_id", uid)
+      .eq("role", "admin")
+      .maybeSingle();
+    isManager = !!admin;
+  }
+  if (!event.checkpoint_scans_public && !isManager) {
+    return NextResponse.json({ ok: false, error: "This board is not public." }, { status: 403 });
   }
 
   const [{ data: distancesRaw }, { data: checkpointsRaw }, { data: scansRaw }] = await Promise.all([
@@ -97,11 +97,13 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     }
   }
 
-  // One board row per runner: entry when matched, else bib text, else device.
+  // One board row per person: entry when matched, else bib text, else device.
+  // Roster-matched rows are "racers"; everything else is a trail-side guest.
   type Row = {
     key: string;
     name: string;
     bib: string | null;
+    matched: boolean;
     anonymous: boolean;
     scans: Record<string, string>; // checkpoint_id -> first_scanned_at
     lastSeenAt: string;
@@ -116,8 +118,9 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       const entry = s.entry_id ? entryById.get(s.entry_id) : null;
       row = {
         key,
-        name: entry?.name ?? (s.bib ? `Bib ${s.bib}` : "Spectator"),
+        name: entry?.name ?? (s.bib ? `Bib ${s.bib} (not on roster)` : "Anonymous guest"),
         bib: entry?.bib ?? s.bib,
+        matched: !!s.entry_id,
         anonymous: !s.entry_id && !s.bib,
         scans: {},
         lastSeenAt: s.first_scanned_at,
@@ -137,6 +140,8 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
   }
 
   const sortedRows = [...rows.values()].sort((a, b) => (a.lastSeenAt < b.lastSeenAt ? 1 : -1));
+  const racerRows = sortedRows.filter((r) => r.matched);
+  const guestRows = sortedRows.filter((r) => !r.matched);
 
   return NextResponse.json({
     ok: true,
@@ -160,15 +165,26 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       name: c.name,
       mile_marker: c.mile_marker,
     })),
-    runners: sortedRows.map((r) => ({
+    racers: racerRows.map((r) => ({
       key: r.key,
       name: r.name,
       bib: r.bib,
-      anonymous: r.anonymous,
       scans: r.scans,
       lastSeenAt: r.lastSeenAt,
       lastSeenCheckpointId: r.lastSeenCheckpointId,
       distanceIds: [...r.distanceIds],
     })),
+    // Guests (unmatched bibs, anonymous scans) are promoter-only.
+    guests: isManager
+      ? guestRows.map((r) => ({
+          key: r.key,
+          name: r.name,
+          bib: r.bib,
+          anonymous: r.anonymous,
+          scans: r.scans,
+          lastSeenAt: r.lastSeenAt,
+          lastSeenCheckpointId: r.lastSeenCheckpointId,
+        }))
+      : null,
   });
 }
