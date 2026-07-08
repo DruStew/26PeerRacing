@@ -207,6 +207,42 @@ function formToInput(
 const inputClass =
   "mt-1 w-full rounded-lg border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm text-[#1E3A5F] focus:border-[#E87722] focus:outline-none focus:ring-2 focus:ring-[#E87722]/25";
 
+/**
+ * Division count picker (1–5). A native <select> instead of a number input:
+ * desktop gets a dropdown, mobile gets the OS wheel picker — number-input
+ * spinner arrows are unusable on phones.
+ */
+function DivisionCountSelect({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <label className="block text-sm font-medium text-[#1E3A5F]">
+      {label}
+      <select
+        className={inputClass}
+        value={Math.max(1, Math.min(MAX_DIVISIONS, Math.floor(value)))}
+        onChange={(e) => onChange(Number(e.target.value))}
+      >
+        {DIVISION_NAMES.map((name, i) => {
+          const n = i + 1;
+          const range = n === 1 ? name : `${DIVISION_NAMES[0]}–${name}`;
+          return (
+            <option key={n} value={n}>
+              {n} — {range}
+            </option>
+          );
+        })}
+      </select>
+    </label>
+  );
+}
+
 function PercentField({
   label,
   hint,
@@ -229,6 +265,7 @@ function PercentField({
       <div className="relative mt-1">
         <input
           type="number"
+          inputMode="decimal"
           step={step}
           min={0}
           max={max}
@@ -625,6 +662,7 @@ export function EventPayoutClient({
               Entry count
               <input
                 type="number"
+                inputMode="numeric"
                 min={0}
                 className={`${inputClass} tabular-nums`}
                 value={form.entryCount}
@@ -697,17 +735,11 @@ export function EventPayoutClient({
             weights follow that column.
           </p>
           <div className="mt-3 max-w-xs">
-            <label className="block text-sm font-medium text-[#1E3A5F]">
-              Divisions to pay
-              <input
-                type="number"
-                min={1}
-                max={MAX_DIVISIONS}
-                className={`${inputClass} tabular-nums`}
-                value={form.divisionCount}
-                onChange={(e) => setDivisionCount(Number(e.target.value))}
-              />
-            </label>
+            <DivisionCountSelect
+              label="Divisions to pay"
+              value={form.divisionCount}
+              onChange={setDivisionCount}
+            />
           </div>
 
           {algorithmSuggestion ? (
@@ -904,29 +936,13 @@ export function EventPayoutClient({
                     )}
                   </div>
                   <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-[#1E3A5F]">
-                    Divisions (female pool)
-                    <input
-                      type="number"
-                      min={1}
-                      max={MAX_DIVISIONS}
-                      className={`${inputClass} tabular-nums`}
+                    <DivisionCountSelect
+                      label="Divisions (female pool)"
                       value={form.femaleIncentiveDivisionCount}
-                      onChange={(e) =>
-                        setForm((f) =>
-                          f
-                            ? {
-                                ...f,
-                                femaleIncentiveDivisionCount: Math.min(
-                                  MAX_DIVISIONS,
-                                  Math.max(1, Number(e.target.value) || 1),
-                                ),
-                              }
-                            : f,
-                        )
+                      onChange={(n) =>
+                        setForm((f) => (f ? { ...f, femaleIncentiveDivisionCount: n } : f))
                       }
                     />
-                  </label>
                   </div>
                 </div>
               ) : (
@@ -1005,29 +1021,13 @@ export function EventPayoutClient({
                     )}
                   </div>
                   <div className="grid max-w-2xl gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-medium text-[#1E3A5F]">
-                    Divisions (military pool)
-                    <input
-                      type="number"
-                      min={1}
-                      max={MAX_DIVISIONS}
-                      className={`${inputClass} tabular-nums`}
+                    <DivisionCountSelect
+                      label="Divisions (military pool)"
                       value={form.militaryIncentiveDivisionCount}
-                      onChange={(e) =>
-                        setForm((f) =>
-                          f
-                            ? {
-                                ...f,
-                                militaryIncentiveDivisionCount: Math.min(
-                                  MAX_DIVISIONS,
-                                  Math.max(1, Number(e.target.value) || 1),
-                                ),
-                              }
-                            : f,
-                        )
+                      onChange={(n) =>
+                        setForm((f) => (f ? { ...f, militaryIncentiveDivisionCount: n } : f))
                       }
                     />
-                  </label>
                   </div>
                 </div>
               ) : (

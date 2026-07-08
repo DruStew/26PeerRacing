@@ -374,6 +374,7 @@ export function ResultsConsoleClient({
                 Slow-end cutoff (max percentile)
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={50}
                   max={100}
                   className={`${inputClass} tabular-nums`}
@@ -385,6 +386,7 @@ export function ResultsConsoleClient({
                 Fast-end cutoff (min percentile)
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   max={50}
                   className={`${inputClass} tabular-nums`}

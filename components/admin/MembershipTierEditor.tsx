@@ -76,6 +76,7 @@ export function MembershipTierEditor({
             <input
               name="price_usd"
               type="number"
+              inputMode="decimal"
               min={0}
               step={0.01}
               defaultValue={centsToPriceInputValue(tier.price_cents)}
@@ -99,6 +100,7 @@ export function MembershipTierEditor({
           <input
             name="sort_order"
             type="number"
+            inputMode="numeric"
             defaultValue={tier.sort_order}
             className="mt-1 w-full rounded-md border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm"
           />
@@ -108,6 +110,7 @@ export function MembershipTierEditor({
           <input
             name="rank"
             type="number"
+            inputMode="numeric"
             defaultValue={tier.rank}
             className="mt-1 w-full rounded-md border border-[#1E3A5F]/20 bg-white px-3 py-2 text-sm"
           />
@@ -220,6 +223,7 @@ export function AddMembershipTierForm() {
             <input
               name="price_usd"
               type="number"
+              inputMode="decimal"
               min={0}
               step={0.01}
               defaultValue="100.00"
