@@ -145,6 +145,18 @@ export function RaceMapEditor({
   const pinModeRef = useRef<PinMode | null>(null);
   pinModeRef.current = pinMode;
 
+  // A specific aid station / checkpoint row "armed" to receive the next map
+  // click as its pin (row-level Place pin / Move pin buttons).
+  const [armedKey, setArmedKey] = useState<string | null>(null);
+  const armedKeyRef = useRef<string | null>(null);
+  armedKeyRef.current = armedKey;
+
+  function armRow(key: string) {
+    setArmedKey((k) => (k === key ? null : key));
+    setPinMode(null);
+    drawRef.current?.changeMode("simple_select");
+  }
+
   const [lengthMeters, setLengthMeters] = useState(() => courseLengthMeters(initialCourse));
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Array<{ name: string; address: string; lat: number; lng: number }>>([]);
@@ -232,13 +244,29 @@ export function RaceMapEditor({
     map.on("draw.delete", recomputeLength);
     // Entering line-draw mode turns pin drops off so one click never does both.
     map.on("draw.modechange", (e: { mode: string }) => {
-      if (e.mode === "draw_line_string") setPinMode(null);
+      if (e.mode === "draw_line_string") {
+        setPinMode(null);
+        setArmedKey(null);
+      }
     });
 
     map.on("click", (e) => {
+      const { lat, lng } = e.lngLat;
+
+      // An armed row (Place pin / Move pin button) wins over the mode toggle.
+      const armed = armedKeyRef.current;
+      if (armed) {
+        if (armed.startsWith("aid-")) {
+          setStations((list) => list.map((s) => (s.key === armed ? { ...s, lat, lng } : s)));
+        } else if (armed.startsWith("cp-")) {
+          setCheckpoints((list) => list.map((c) => (c.key === armed ? { ...c, lat, lng } : c)));
+        }
+        setArmedKey(null);
+        return;
+      }
+
       const mode = pinModeRef.current;
       if (!mode) return;
-      const { lat, lng } = e.lngLat;
       if (mode === "start") setStart((s) => ({ ...s, lat, lng }));
       else if (mode === "finish") setFinish((f) => ({ ...f, lat, lng }));
       else if (mode === "aid") {
@@ -673,6 +701,7 @@ export function RaceMapEditor({
       type="button"
       onClick={() => {
         setPinMode((m) => (m === mode ? null : mode));
+        setArmedKey(null);
         // Leaving draw mode ensures a click drops a pin instead of a vertex.
         drawRef.current?.changeMode("simple_select");
       }}
@@ -910,8 +939,15 @@ export function RaceMapEditor({
         {stations.length > 0 ? (
           <ul className="mt-4 space-y-2">
             {stations.map((s, i) => (
-              <li key={s.key} className="space-y-2 rounded-lg border border-[#1E3A5F]/10 bg-white p-3">
-                <div className="grid gap-2 sm:grid-cols-[1.4fr_0.6fr_auto_auto] sm:items-end">
+              <li
+                key={s.key}
+                className={`space-y-2 rounded-lg border bg-white p-3 ${
+                  armedKey === s.key
+                    ? "border-teal-500 ring-2 ring-teal-500/30"
+                    : "border-[#1E3A5F]/10"
+                }`}
+              >
+                <div className="grid gap-2 sm:grid-cols-[1.4fr_0.6fr_auto] sm:items-end">
                   <div>
                     <label className="text-xs font-medium text-[#1E3A5F]/70">Name</label>
                     <input
@@ -939,18 +975,56 @@ export function RaceMapEditor({
                     />
                     Drop bags
                   </label>
-                  <div className="flex items-center gap-3 pb-2">
-                    <span className="text-xs text-[#1E3A5F]/50">
-                      {s.lat != null && s.lng != null ? "📍 pinned" : "no pin"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setStations((list) => list.filter((x) => x.key !== s.key))}
-                      className="text-xs font-semibold text-[#1E3A5F]/70 transition-colors hover:text-red-600"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => armRow(s.key)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      armedKey === s.key
+                        ? "bg-teal-600 text-white"
+                        : "border border-[#1E3A5F]/20 text-[#1E3A5F] hover:border-teal-600 hover:text-teal-700"
+                    }`}
+                  >
+                    {armedKey === s.key
+                      ? "Click the map…"
+                      : s.lat != null && s.lng != null
+                        ? "Move pin"
+                        : "Place pin"}
+                  </button>
+                  {s.lat != null && s.lng != null ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          mapRef.current?.flyTo({ center: [s.lng as number, s.lat as number], zoom: 15 })
+                        }
+                        className="rounded-md border border-[#1E3A5F]/20 px-2.5 py-1 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] hover:text-[#E87722]"
+                      >
+                        Show on map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateStation(s.key, { lat: null, lng: null })}
+                        className="rounded-md border border-[#1E3A5F]/20 px-2.5 py-1 text-xs font-semibold text-[#1E3A5F]/70 hover:border-red-500 hover:text-red-600"
+                      >
+                        Clear pin
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-[#1E3A5F]/50">no pin yet</span>
+                  )}
+                  <span className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStations((list) => list.filter((x) => x.key !== s.key));
+                      if (armedKey === s.key) setArmedKey(null);
+                    }}
+                    className="text-xs font-semibold text-[#1E3A5F]/70 transition-colors hover:text-red-600"
+                  >
+                    Remove
+                  </button>
                 </div>
                 <input
                   value={s.note}
@@ -1004,9 +1078,16 @@ export function RaceMapEditor({
 
         {checkpoints.length > 0 ? (
           <ul className="mt-4 space-y-2">
-            {checkpoints.map((cp, i) => (
-              <li key={cp.key} className="space-y-2 rounded-lg border border-[#1E3A5F]/10 bg-white p-3">
-                <div className="grid gap-2 sm:grid-cols-[1.4fr_0.6fr_auto] sm:items-end">
+            {checkpoints.map((cp) => (
+              <li
+                key={cp.key}
+                className={`space-y-2 rounded-lg border bg-white p-3 ${
+                  armedKey === cp.key
+                    ? "border-[#7c3aed] ring-2 ring-[#7c3aed]/30"
+                    : "border-[#1E3A5F]/10"
+                }`}
+              >
+                <div className="grid gap-2 sm:grid-cols-[1.4fr_0.6fr] sm:items-end">
                   <div>
                     <label className="text-xs font-medium text-[#1E3A5F]/70">Name</label>
                     <input
@@ -1025,18 +1106,56 @@ export function RaceMapEditor({
                       className={`mt-1 ${inputClass}`}
                     />
                   </div>
-                  <div className="flex items-center gap-3 pb-2">
-                    <span className="text-xs text-[#1E3A5F]/50">
-                      {cp.lat != null && cp.lng != null ? "📍 pinned" : "no pin"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setCheckpoints((list) => list.filter((x) => x.key !== cp.key))}
-                      className="text-xs font-semibold text-[#1E3A5F]/70 transition-colors hover:text-red-600"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => armRow(cp.key)}
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${
+                      armedKey === cp.key
+                        ? "bg-[#7c3aed] text-white"
+                        : "border border-[#1E3A5F]/20 text-[#1E3A5F] hover:border-[#7c3aed] hover:text-[#7c3aed]"
+                    }`}
+                  >
+                    {armedKey === cp.key
+                      ? "Click the map…"
+                      : cp.lat != null && cp.lng != null
+                        ? "Move pin"
+                        : "Place pin"}
+                  </button>
+                  {cp.lat != null && cp.lng != null ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          mapRef.current?.flyTo({ center: [cp.lng as number, cp.lat as number], zoom: 15 })
+                        }
+                        className="rounded-md border border-[#1E3A5F]/20 px-2.5 py-1 text-xs font-semibold text-[#1E3A5F] hover:border-[#E87722] hover:text-[#E87722]"
+                      >
+                        Show on map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateCheckpoint(cp.key, { lat: null, lng: null })}
+                        className="rounded-md border border-[#1E3A5F]/20 px-2.5 py-1 text-xs font-semibold text-[#1E3A5F]/70 hover:border-red-500 hover:text-red-600"
+                      >
+                        Clear pin
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-[#1E3A5F]/50">no pin yet</span>
+                  )}
+                  <span className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCheckpoints((list) => list.filter((x) => x.key !== cp.key));
+                      if (armedKey === cp.key) setArmedKey(null);
+                    }}
+                    className="text-xs font-semibold text-[#1E3A5F]/70 transition-colors hover:text-red-600"
+                  >
+                    Remove
+                  </button>
                 </div>
                 <input
                   value={cp.note}
