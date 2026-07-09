@@ -32,6 +32,7 @@
     "@resvg/resvg-js": "^2.6.2",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.2",
+    "js-aruco2": "^2.0.0",
     "mapbox-gl": "^3.25.0",
     "next": "16.1.6",
     "opentype.js": "^2.0.0",

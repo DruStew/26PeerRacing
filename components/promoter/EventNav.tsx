@@ -6,6 +6,7 @@ const TABS = [
   { key: "edit", label: "Manage Race", path: "edit" },
   { key: "roster", label: "Check-In Roster", path: "roster" },
   { key: "kiosk", label: "Race Day Kiosk", path: "kiosk" },
+  { key: "timing", label: "Finish Cam", path: "timing" },
   { key: "payout", label: "Payout Calculator", path: "payout" },
   { key: "results", label: "Results Console", path: "results" },
   { key: "checkpoints", label: "Live Board", path: "checkpoints" },

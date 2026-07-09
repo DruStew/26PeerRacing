@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KioskCreateMemberPanel } from "@/components/kiosk/KioskCreateMemberPanel";
 import { KioskWalkUpEntryForm, type KioskEnterFlow } from "@/components/kiosk/KioskWalkUpEntryForm";
 import { TimeNumpadInput } from "@/components/promoter/TimeNumpadInput";
+import { TimingTagScanner } from "@/components/timing/TimingTagScanner";
 import {
   carryOverLinkedEntryIds,
   carryOverLinkedLabels,
@@ -222,6 +223,9 @@ export function CheckInRunnerClient({
   const [finishTimeDrafts, setFinishTimeDrafts] = useState<Record<string, string>>({});
   const [finishTimePendingId, setFinishTimePendingId] = useState<string | null>(null);
   const [activeFinishTimeEntryId, setActiveFinishTimeEntryId] = useState<string | null>(null);
+  /** Entry currently scanning a timing tag sticker; bound tags per entry (session display). */
+  const [tagScanEntryId, setTagScanEntryId] = useState<string | null>(null);
+  const [boundTags, setBoundTags] = useState<Record<string, number>>({});
   /** Bib from search row if profile/entries haven’t loaded pr_id yet (same DB, kiosk display). */
   const [kioskBibFallback, setKioskBibFallback] = useState<string | null>(null);
 
@@ -1135,6 +1139,24 @@ export function CheckInRunnerClient({
                             Timing bib & RFID
                           </button>
                         ) : null}
+                        {!isCarryOverEntry(e) ? (
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setTagScanEntryId((prev) => (prev === e.id ? null : e.id));
+                            }}
+                            className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${
+                              boundTags[e.id] !== undefined
+                                ? "border-violet-400 bg-violet-50 text-violet-800"
+                                : "border-[#1E3A5F]/25 text-[#1E3A5F] hover:border-[#E87722]"
+                            }`}
+                          >
+                            {boundTags[e.id] !== undefined
+                              ? `Tag ${String(boundTags[e.id]).padStart(3, "0")} ✓`
+                              : "Scan timing tag"}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           disabled={withdrawPendingId === e.id}
@@ -1146,6 +1168,20 @@ export function CheckInRunnerClient({
                       </div>
                     </div>
                   </div>
+                  {tagScanEntryId === e.id ? (
+                    <TimingTagScanner
+                      eventId={eventId}
+                      entryId={e.id}
+                      runnerName={[runner.profile.first_name, runner.profile.last_name]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onBound={(tagId) => {
+                        setBoundTags((prev) => ({ ...prev, [e.id]: tagId }));
+                        setTagScanEntryId(null);
+                      }}
+                      onClose={() => setTagScanEntryId(null)}
+                    />
+                  ) : null}
                   {variant === "promoter" ? (
                     <div
                       className="mt-3 border-t border-[#1E3A5F]/10 pt-3"
