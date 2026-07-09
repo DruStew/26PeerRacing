@@ -10,6 +10,7 @@ import { EventVenueDirections } from "@/components/events/EventVenueDirections";
 import { ShareRaceButton } from "@/components/events/ShareRaceButton";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { CourseMapLazy } from "@/components/maps/CourseMapLazy";
+import type { RaceMapPin } from "@/components/maps/race-map-pins";
 import {
   courseLengthMeters,
   metersToKm,
@@ -24,6 +25,7 @@ import { formatDistanceDisplay } from "@/lib/distance-display";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +118,7 @@ export default async function EventPage({
   const { data: distances } = await supabase
     .from("distances")
     .select(
-      "id,label,race_name,gun_time,entry_fee_cents,pr_cutoff,results_published_at,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes",
+      "id,label,race_name,gun_time,entry_fee_cents,pr_cutoff,results_published_at,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,start_note,finish_location_name,finish_lat,finish_lng,finish_note,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes",
     )
     .eq("event_id", id)
     .order("gun_time", { ascending: true, nullsFirst: true });
@@ -219,12 +221,13 @@ export default async function EventPage({
     lat: number | null;
     lng: number | null;
     drop_bags: boolean;
+    note: string | null;
     sort_order: number;
   }>>();
   if (distanceIds.length > 0) {
     const { data: aidRows } = await supabase
       .from("aid_stations")
-      .select("id,distance_id,name,mile_marker,lat,lng,drop_bags,sort_order")
+      .select("id,distance_id,name,mile_marker,lat,lng,drop_bags,note,sort_order")
       .in("distance_id", distanceIds)
       .order("sort_order", { ascending: true });
     for (const row of aidRows ?? []) {
@@ -236,10 +239,48 @@ export default async function EventPage({
         lat: number | null;
         lng: number | null;
         drop_bags: boolean;
+        note: string | null;
         sort_order: number;
       };
       if (!aidStationsByDistance.has(r.distance_id)) aidStationsByDistance.set(r.distance_id, []);
       aidStationsByDistance.get(r.distance_id)!.push(r);
+    }
+  }
+
+  // QR checkpoint pins are public on the race map. Their RLS is promoter-only
+  // (the token column must stay private), so read just the safe columns here
+  // with the service role.
+  const checkpointPinsByDistance = new Map<
+    string,
+    Array<{ name: string; mile_marker: string | null; lat: number; lng: number; note: string | null }>
+  >();
+  if (distanceIds.length > 0) {
+    const service = createServiceRoleSupabaseClient();
+    if (service) {
+      const { data: cpRows } = await service
+        .from("qr_checkpoints")
+        .select("distance_id,name,mile_marker,lat,lng,note,sort_order")
+        .in("distance_id", distanceIds)
+        .order("sort_order", { ascending: true });
+      for (const row of cpRows ?? []) {
+        const r = row as {
+          distance_id: string;
+          name: string;
+          mile_marker: string | null;
+          lat: number | null;
+          lng: number | null;
+          note: string | null;
+        };
+        if (r.lat == null || r.lng == null) continue;
+        if (!checkpointPinsByDistance.has(r.distance_id)) checkpointPinsByDistance.set(r.distance_id, []);
+        checkpointPinsByDistance.get(r.distance_id)!.push({
+          name: r.name,
+          mile_marker: r.mile_marker,
+          lat: r.lat,
+          lng: r.lng,
+          note: r.note,
+        });
+      }
     }
   }
 
@@ -434,6 +475,60 @@ export default async function EventPage({
                     | null;
                 const courseMeters = courseLengthMeters(course);
                 const hasCourse = courseMeters > 0;
+
+                // Start/finish/aid/checkpoint pins with promoter notes to runners.
+                const dLoc = d as {
+                  start_location_name?: string | null;
+                  start_lat?: number | null;
+                  start_lng?: number | null;
+                  start_note?: string | null;
+                  finish_location_name?: string | null;
+                  finish_lat?: number | null;
+                  finish_lng?: number | null;
+                  finish_note?: string | null;
+                };
+                const racePins: RaceMapPin[] = [];
+                if (dLoc.start_lat != null && dLoc.start_lng != null) {
+                  racePins.push({
+                    kind: "start",
+                    name: dLoc.start_location_name?.trim() || "Start line",
+                    lat: dLoc.start_lat,
+                    lng: dLoc.start_lng,
+                    note: dLoc.start_note ?? null,
+                  });
+                }
+                if (dLoc.finish_lat != null && dLoc.finish_lng != null) {
+                  racePins.push({
+                    kind: "finish",
+                    name: dLoc.finish_location_name?.trim() || "Finish line",
+                    lat: dLoc.finish_lat,
+                    lng: dLoc.finish_lng,
+                    note: dLoc.finish_note ?? null,
+                  });
+                }
+                for (const s of aidStationsByDistance.get(d.id) ?? []) {
+                  if (s.lat == null || s.lng == null) continue;
+                  racePins.push({
+                    kind: "aid",
+                    name: s.name,
+                    lat: s.lat,
+                    lng: s.lng,
+                    mile: s.mile_marker,
+                    note: s.note,
+                    dropBags: s.drop_bags,
+                  });
+                }
+                for (const c of checkpointPinsByDistance.get(d.id) ?? []) {
+                  racePins.push({
+                    kind: "checkpoint",
+                    name: c.name,
+                    lat: c.lat,
+                    lng: c.lng,
+                    mile: c.mile_marker,
+                    note: c.note,
+                  });
+                }
+
                 const onlineRegCloses = prCutoff ?? eventOnlineRegClosesAt;
                 const scheduleParts = [
                   gun ? `Gun: ${formatDateTime(gun)}` : null,
@@ -499,7 +594,7 @@ export default async function EventPage({
                         </p>
                       )}
                     </div>
-                    {hasCourse ? (
+                    {hasCourse || racePins.length > 0 ? (
                       <div className="mt-4">
                         <CourseMapLazy
                           course={course}
@@ -508,8 +603,26 @@ export default async function EventPage({
                               ? { lat: venueLat as number, lng: venueLng as number, label: venueName ?? event.name }
                               : null
                           }
+                          pins={racePins}
                           heightClass="h-64"
                         />
+                        {racePins.length > 0 ? (
+                          <p className="mt-1.5 text-[11px] text-[#1E3A5F]/55">
+                            Tap a pin for details.{" "}
+                            <span className="whitespace-nowrap">
+                              <span className="inline-block h-2 w-2 rounded-full align-baseline" style={{ background: "#16a34a" }} /> start
+                            </span>{" "}
+                            <span className="whitespace-nowrap">
+                              <span className="inline-block h-2 w-2 rounded-full align-baseline" style={{ background: "#dc2626" }} /> finish
+                            </span>{" "}
+                            <span className="whitespace-nowrap">
+                              <span className="inline-block h-2 w-2 rounded-full align-baseline" style={{ background: "#0d9488" }} /> aid
+                            </span>{" "}
+                            <span className="whitespace-nowrap">
+                              <span className="inline-block h-2 w-2 rounded-full align-baseline" style={{ background: "#7c3aed" }} /> checkpoint
+                            </span>
+                          </p>
+                        ) : null}
                       </div>
                     ) : null}
                   </li>

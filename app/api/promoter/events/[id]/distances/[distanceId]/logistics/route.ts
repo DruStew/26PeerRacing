@@ -73,12 +73,18 @@ export async function PUT(
     start_location_address?: string | null;
     start_lat?: number | null;
     start_lng?: number | null;
+    start_note?: string | null;
+    finish_location_name?: string | null;
+    finish_lat?: number | null;
+    finish_lng?: number | null;
+    finish_note?: string | null;
     aid_stations?: Array<{
       name?: string;
       mile_marker?: string | null;
       lat?: number | null;
       lng?: number | null;
       drop_bags?: boolean;
+      note?: string | null;
     }>;
   };
   try {
@@ -90,6 +96,10 @@ export async function PUT(
   const startCoord = validCoord(body.start_lat, body.start_lng);
   if (!startCoord) {
     return NextResponse.json({ ok: false, error: "Start pin coordinates out of range." }, { status: 400 });
+  }
+  const finishCoord = validCoord(body.finish_lat, body.finish_lng);
+  if (!finishCoord) {
+    return NextResponse.json({ ok: false, error: "Finish pin coordinates out of range." }, { status: 400 });
   }
 
   const stationsRaw = Array.isArray(body.aid_stations) ? body.aid_stations : [];
@@ -104,6 +114,7 @@ export async function PUT(
     lat: number | null;
     lng: number | null;
     drop_bags: boolean;
+    note: string | null;
     sort_order: number;
   }> = [];
   for (let i = 0; i < stationsRaw.length; i++) {
@@ -123,6 +134,7 @@ export async function PUT(
       lat: coord.lat,
       lng: coord.lng,
       drop_bags: s.drop_bags === true,
+      note: String(s.note ?? "").trim().slice(0, 500) || null,
       sort_order: i,
     });
   }
@@ -134,6 +146,11 @@ export async function PUT(
       start_location_address: body.start_location_address?.trim() || null,
       start_lat: startCoord.lat,
       start_lng: startCoord.lng,
+      start_note: String(body.start_note ?? "").trim().slice(0, 500) || null,
+      finish_location_name: body.finish_location_name?.trim() || null,
+      finish_lat: finishCoord.lat,
+      finish_lng: finishCoord.lng,
+      finish_note: String(body.finish_note ?? "").trim().slice(0, 500) || null,
     })
     .eq("id", distanceId)
     .eq("event_id", eventId);

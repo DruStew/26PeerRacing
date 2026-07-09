@@ -2,12 +2,10 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
-import { CheckpointsEditor } from "@/components/checkpoints/CheckpointsEditor";
 import { SponsorLogoUploader } from "@/components/share/SponsorLogoUploader";
 import { CHECKPOINT_AUDIO_BUCKET } from "@/lib/checkpoints/shared";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
-import { CourseEditorLazy } from "@/components/maps/CourseEditorLazy";
-import { StartAidStationsEditorLazy } from "@/components/maps/StartAidStationsEditorLazy";
+import { RaceMapEditorLazy } from "@/components/maps/RaceMapEditorLazy";
 import type { CourseGeoJSON } from "@/lib/mapbox/config";
 import { DistanceTierCheckboxes } from "@/components/promoter/DistanceTierCheckboxes";
 import { GunCheckInFields } from "@/components/promoter/GunCheckInFields";
@@ -53,7 +51,7 @@ export default async function EditDistancePage({
   const { data: distance, error: distanceError } = await supabase
     .from("distances")
     .select(
-      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes,share_sponsor_logo_url",
+      "id,label,race_name,gun_time,pr_cutoff,is_peer_racing_qualifier,allow_roll_over_from_qualifier,allow_qualifier_split_to_roll_over_here,allow_pacers,pacer_fee_cents,entry_fee_cents,course_geojson,allow_free_tier,allow_pr_team_tier,allow_top_tier,check_in_opens_at,check_in_closes_at,allow_walk_ups,walk_up_fee_cents,start_location_name,start_location_address,start_lat,start_lng,start_note,finish_location_name,finish_lat,finish_lng,finish_note,course_cutoff_at,course_cutoff_text,packet_pickup_info,additional_notes,share_sponsor_logo_url",
     )
     .eq("id", distanceId)
     .eq("event_id", eventId)
@@ -97,6 +95,11 @@ export default async function EditDistancePage({
     start_location_address?: string | null;
     start_lat?: number | null;
     start_lng?: number | null;
+    start_note?: string | null;
+    finish_location_name?: string | null;
+    finish_lat?: number | null;
+    finish_lng?: number | null;
+    finish_note?: string | null;
     course_cutoff_at?: string | null;
     course_cutoff_text?: string | null;
     packet_pickup_info?: string | null;
@@ -124,7 +127,7 @@ export default async function EditDistancePage({
 
   const { data: aidStationsRaw } = await supabase
     .from("aid_stations")
-    .select("name,mile_marker,lat,lng,drop_bags,sort_order")
+    .select("name,mile_marker,lat,lng,drop_bags,note,sort_order")
     .eq("distance_id", distanceId)
     .order("sort_order", { ascending: true });
 
@@ -144,7 +147,7 @@ export default async function EditDistancePage({
   // QR checkpoints (promoter RLS allows this select).
   const { data: checkpointsRaw } = await supabase
     .from("qr_checkpoints")
-    .select("id,name,mile_marker,sort_order,audio_path,token")
+    .select("id,name,mile_marker,lat,lng,note,sort_order,audio_path,token")
     .eq("distance_id", distanceId)
     .order("sort_order", { ascending: true });
   const hdrs = await headers();
@@ -155,12 +158,18 @@ export default async function EditDistancePage({
     id: string;
     name: string;
     mile_marker: string | null;
+    lat: number | null;
+    lng: number | null;
+    note: string | null;
     audio_path: string | null;
     token: string;
   }>).map((c) => ({
     id: c.id,
     name: c.name,
     mile_marker: c.mile_marker,
+    lat: c.lat,
+    lng: c.lng,
+    note: c.note,
     audio_url: c.audio_path
       ? supabase.storage.from(CHECKPOINT_AUDIO_BUCKET).getPublicUrl(c.audio_path).data.publicUrl
       : null,
@@ -506,22 +515,40 @@ export default async function EditDistancePage({
         </div>
 
         <section className="mt-10">
-          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">
-            Start Line & Aid Stations
-          </h2>
+          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Course & Race Map</h2>
           <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            Pin where this race starts if it differs from the event venue (point-to-point races),
-            and drop a pin for each aid station. Short races can skip this entirely.
+            One map for everything: draw or GPX-import the route, then pin the start line, finish
+            line, aid stations, and QR checkpoints — each with an optional note to runners. The
+            whole map (with notes) shows on the public event page. Watch checkpoint scans on the{" "}
+            <Link
+              href={`/promoter/events/${eventId}/checkpoints`}
+              className="font-medium text-[#E87722] hover:underline"
+            >
+              Live Board
+            </Link>
+            .
           </p>
           <div className="mt-6">
-            <StartAidStationsEditorLazy
+            <RaceMapEditorLazy
               eventId={eventId}
               distanceId={distanceId}
+              initialCourse={
+                ((distance as { course_geojson?: CourseGeoJSON | null }).course_geojson ?? null) as
+                  | CourseGeoJSON
+                  | null
+              }
               initialStart={{
                 name: logistics.start_location_name ?? "",
                 address: logistics.start_location_address ?? "",
+                note: logistics.start_note ?? "",
                 lat: logistics.start_lat ?? null,
                 lng: logistics.start_lng ?? null,
+              }}
+              initialFinish={{
+                name: logistics.finish_location_name ?? "",
+                note: logistics.finish_note ?? "",
+                lat: logistics.finish_lat ?? null,
+                lng: logistics.finish_lng ?? null,
               }}
               initialStations={(aidStationsRaw ?? []).map((s) => ({
                 name: (s as { name: string }).name,
@@ -529,7 +556,9 @@ export default async function EditDistancePage({
                 lat: (s as { lat?: number | null }).lat ?? null,
                 lng: (s as { lng?: number | null }).lng ?? null,
                 drop_bags: (s as { drop_bags?: boolean }).drop_bags === true,
+                note: (s as { note?: string | null }).note ?? null,
               }))}
+              initialCheckpoints={initialCheckpoints}
               venue={
                 (event as { venue_lat?: number | null }).venue_lat != null &&
                 (event as { venue_lng?: number | null }).venue_lng != null
@@ -566,56 +595,6 @@ export default async function EditDistancePage({
           </div>
         </section>
 
-        <section className="mt-10">
-          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">QR Trail Checkpoints</h2>
-          <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            Optional scannable signs along the course — live runner tracking plus audio stories.
-            Watch scans come in on the{" "}
-            <Link
-              href={`/promoter/events/${eventId}/checkpoints`}
-              className="font-medium text-[#E87722] hover:underline"
-            >
-              Live Board
-            </Link>
-            .
-          </p>
-          <div className="mt-6">
-            <CheckpointsEditor
-              eventId={eventId}
-              distanceId={distanceId}
-              initial={initialCheckpoints}
-              inputClass={inputClass}
-            />
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="font-display text-xl font-semibold text-[#1E3A5F]">Course Map</h2>
-          <p className="mt-1 text-sm text-[#1E3A5F]/70">
-            Draw this distance&apos;s route. The course and its measured length show on the public
-            event and results pages for racers and followers.
-          </p>
-          <div className="mt-6">
-            <CourseEditorLazy
-              eventId={eventId}
-              distanceId={distanceId}
-              initialCourse={
-                ((distance as { course_geojson?: CourseGeoJSON | null }).course_geojson ?? null) as
-                  | CourseGeoJSON
-                  | null
-              }
-              venue={
-                (event as { venue_lat?: number | null }).venue_lat != null &&
-                (event as { venue_lng?: number | null }).venue_lng != null
-                  ? {
-                      lat: (event as { venue_lat: number }).venue_lat,
-                      lng: (event as { venue_lng: number }).venue_lng,
-                    }
-                  : null
-              }
-            />
-          </div>
-        </section>
       </main>
     </div>
   );

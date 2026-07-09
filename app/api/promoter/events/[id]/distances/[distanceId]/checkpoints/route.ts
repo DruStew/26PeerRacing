@@ -44,6 +44,9 @@ type CheckpointRow = {
   sort_order: number;
   audio_path: string | null;
   token: string;
+  lat: number | null;
+  lng: number | null;
+  note: string | null;
 };
 
 function toClient(service: SupabaseClient, origin: string, row: CheckpointRow) {
@@ -57,16 +60,27 @@ function toClient(service: SupabaseClient, origin: string, row: CheckpointRow) {
     sort_order: row.sort_order,
     audio_url: audioUrl,
     scan_url: `${origin}/c/${row.token}`,
+    lat: row.lat,
+    lng: row.lng,
+    note: row.note,
   };
 }
 
 async function listCheckpoints(service: SupabaseClient, distanceId: string): Promise<CheckpointRow[]> {
   const { data } = await service
     .from("qr_checkpoints")
-    .select("id,name,mile_marker,sort_order,audio_path,token")
+    .select("id,name,mile_marker,sort_order,audio_path,token,lat,lng,note")
     .eq("distance_id", distanceId)
     .order("sort_order", { ascending: true });
   return (data ?? []) as CheckpointRow[];
+}
+
+function validCoord(lat: unknown, lng: unknown): { lat: number | null; lng: number | null } | null {
+  const la = lat == null ? null : Number(lat);
+  const ln = lng == null ? null : Number(lng);
+  if (la != null && (Number.isNaN(la) || la < -90 || la > 90)) return null;
+  if (ln != null && (Number.isNaN(ln) || ln < -180 || ln > 180)) return null;
+  return { lat: la, lng: ln };
 }
 
 export async function GET(request: Request, ctx: { params: Promise<{ id: string; distanceId: string }> }) {
@@ -110,7 +124,16 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string;
     return NextResponse.json({ ok: false, error: "Distance not found for this event." }, { status: 404 });
   }
 
-  let body: { checkpoints?: Array<{ id?: string | null; name?: string; mile_marker?: string | null }> };
+  let body: {
+    checkpoints?: Array<{
+      id?: string | null;
+      name?: string;
+      mile_marker?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+      note?: string | null;
+    }>;
+  };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -125,17 +148,31 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string;
     );
   }
 
-  const cleaned: Array<{ id: string | null; name: string; mile_marker: string | null }> = [];
+  const cleaned: Array<{
+    id: string | null;
+    name: string;
+    mile_marker: string | null;
+    lat: number | null;
+    lng: number | null;
+    note: string | null;
+  }> = [];
   for (let i = 0; i < incoming.length; i++) {
     const c = incoming[i]!;
     const name = String(c.name ?? "").trim().slice(0, 120);
     if (!name) {
       return NextResponse.json({ ok: false, error: `Checkpoint ${i + 1} is missing a name.` }, { status: 400 });
     }
+    const coord = validCoord(c.lat, c.lng);
+    if (!coord) {
+      return NextResponse.json({ ok: false, error: `Checkpoint "${name}" has invalid coordinates.` }, { status: 400 });
+    }
     cleaned.push({
       id: c.id ? String(c.id) : null,
       name,
       mile_marker: String(c.mile_marker ?? "").trim().slice(0, 40) || null,
+      lat: coord.lat,
+      lng: coord.lng,
+      note: String(c.note ?? "").trim().slice(0, 500) || null,
     });
   }
 
@@ -164,7 +201,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string;
     if (c.id && existingById.has(c.id)) {
       const { error: upErr } = await service
         .from("qr_checkpoints")
-        .update({ name: c.name, mile_marker: c.mile_marker, sort_order: i })
+        .update({ name: c.name, mile_marker: c.mile_marker, lat: c.lat, lng: c.lng, note: c.note, sort_order: i })
         .eq("id", c.id)
         .eq("distance_id", distanceId);
       if (upErr) {
@@ -176,6 +213,9 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string;
         distance_id: distanceId,
         name: c.name,
         mile_marker: c.mile_marker,
+        lat: c.lat,
+        lng: c.lng,
+        note: c.note,
         sort_order: i,
         token: newCheckpointToken(),
       });

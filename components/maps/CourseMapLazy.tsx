@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 
 import type { CourseGeoJSON } from "@/lib/mapbox/config";
+import type { RaceMapPin } from "./race-map-pins";
 
 /** Mapbox GL can't render on the server — load CourseMap client-side only. */
 const CourseMap = dynamic(() => import("./CourseMap").then((m) => m.CourseMap), {
@@ -17,6 +18,7 @@ const CourseMap = dynamic(() => import("./CourseMap").then((m) => m.CourseMap), 
 export function CourseMapLazy(props: {
   course?: CourseGeoJSON | null;
   venue?: { lat: number; lng: number; label?: string | null } | null;
+  pins?: RaceMapPin[];
   heightClass?: string;
 }) {
   return <CourseMap {...props} />;

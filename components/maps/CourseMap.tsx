@@ -12,16 +12,42 @@ import {
   courseBounds,
   type CourseGeoJSON,
 } from "@/lib/mapbox/config";
+import { PIN_COLORS, PIN_LABELS, type RaceMapPin } from "./race-map-pins";
 
 type Props = {
   course?: CourseGeoJSON | null;
   venue?: { lat: number; lng: number; label?: string | null } | null;
+  /** Start/finish/aid/checkpoint pins with promoter notes to runners. */
+  pins?: RaceMapPin[];
   /** Tailwind height utility, e.g. "h-72". */
   heightClass?: string;
 };
 
-/** Read-only course + venue map for public/racer/follower pages. */
-export function CourseMap({ course, venue, heightClass = "h-80" }: Props) {
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function pinPopupHtml(pin: RaceMapPin): string {
+  const parts = [
+    `<p style="margin:0;font-weight:600;color:#1E3A5F">${escapeHtml(pin.name)}</p>`,
+    `<p style="margin:2px 0 0;font-size:11px;color:#1E3A5F99">${PIN_LABELS[pin.kind]}${
+      pin.mile ? ` · mi ${escapeHtml(pin.mile)}` : ""
+    }${pin.dropBags ? " · drop bags ✓" : ""}</p>`,
+  ];
+  if (pin.note?.trim()) {
+    parts.push(
+      `<p style="margin:6px 0 0;font-size:12px;line-height:1.4;color:#1E3A5F">${escapeHtml(pin.note.trim())}</p>`,
+    );
+  }
+  return `<div style="max-width:220px">${parts.join("")}</div>`;
+}
+
+/** Read-only race map (course + pins) for public/racer/follower pages. */
+export function CourseMap({ course, venue, pins, heightClass = "h-80" }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
@@ -69,9 +95,23 @@ export function CourseMap({ course, venue, heightClass = "h-80" }: Props) {
           .addTo(map);
       }
 
+      for (const pin of pins ?? []) {
+        new mapboxgl.Marker({ color: PIN_COLORS[pin.kind], scale: 0.85 })
+          .setLngLat([pin.lng, pin.lat])
+          .setPopup(new mapboxgl.Popup({ offset: 24, maxWidth: "260px" }).setHTML(pinPopupHtml(pin)))
+          .addTo(map);
+      }
+
       const b = courseBounds(course);
       if (b) {
         map.fitBounds(b as [number, number, number, number], { padding: 48, maxZoom: 15 });
+      } else if (pins && pins.length > 0) {
+        const lngs = pins.map((p) => p.lng);
+        const lats = pins.map((p) => p.lat);
+        map.fitBounds(
+          [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)],
+          { padding: 64, maxZoom: 14 },
+        );
       }
     });
 
@@ -79,7 +119,7 @@ export function CourseMap({ course, venue, heightClass = "h-80" }: Props) {
       map.remove();
       mapRef.current = null;
     };
-  }, [course, venue]);
+  }, [course, venue, pins]);
 
   if (!MAPBOX_TOKEN) {
     return (
