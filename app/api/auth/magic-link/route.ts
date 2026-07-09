@@ -22,7 +22,13 @@ export async function POST(request: Request) {
       ? rawReturn
       : DEFAULT_PUBLIC_ROUTE;
 
-  const origin = new URL(request.url).origin;
+  // Dev server binds to 0.0.0.0 (LAN/phone testing) but browsers can't open
+  // that host, so links built from it would be dead — use localhost instead.
+  const requestUrl = new URL(request.url);
+  if (requestUrl.hostname === "0.0.0.0") {
+    requestUrl.hostname = "localhost";
+  }
+  const origin = requestUrl.origin;
   const result = await sendPeerRacingMagicLink({ email, origin, returnUrl });
 
   if (!result.ok) {
