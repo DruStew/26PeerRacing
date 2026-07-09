@@ -2,9 +2,18 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
+import { CashOutCard } from "@/components/wallet/CashOutCard";
 import { DEFAULT_PUBLIC_ROUTE, MY_ENTRIES_ROUTE } from "@/lib/routes";
+import { getConnectAccountRow, refreshConnectStatus } from "@/lib/stripe/connect";
+import { getStripe } from "@/lib/stripe/server";
 import { formatUsdFromCents } from "@/lib/wallet/format-money";
+import {
+  MIN_PAYOUT_CENTS,
+  PAYOUT_FLAT_FEE_CENTS,
+  type PayoutRequestRow,
+} from "@/lib/wallet/payout-config";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
 type LedgerRow = {
   id: string;
@@ -51,6 +60,43 @@ export default async function WalletPage() {
   const rows = (raw ?? []) as LedgerRow[];
   const balanceCents = rows.reduce((sum, r) => sum + Number(r.amount_cents), 0);
 
+  // Cash-out state: Connect status (refreshed from Stripe while onboarding is
+  // incomplete, so returning from the hosted flow shows up immediately).
+  const stripe = getStripe();
+  const service = createServiceRoleSupabaseClient();
+  let connectAccount = service ? await getConnectAccountRow(service, user.id) : null;
+  if (connectAccount && !connectAccount.payouts_enabled && stripe && service) {
+    try {
+      connectAccount = await refreshConnectStatus(service, stripe, connectAccount);
+    } catch {
+      // Stripe hiccup — show last-known status rather than erroring the page.
+    }
+  }
+
+  const { data: payoutRaw } = await supabase
+    .from("wallet_payout_requests")
+    .select(
+      "id,amount_cents,fee_cents,net_cents,method,status,manual_method,requested_at,paid_at",
+    )
+    .eq("user_id", user.id)
+    .order("requested_at", { ascending: false })
+    .limit(25);
+  const payoutRequests = (payoutRaw ?? []) as Array<
+    Pick<
+      PayoutRequestRow,
+      | "id"
+      | "amount_cents"
+      | "fee_cents"
+      | "net_cents"
+      | "method"
+      | "status"
+      | "manual_method"
+      | "requested_at"
+      | "paid_at"
+    >
+  >;
+  const cashOutAvailable = Boolean(stripe && service);
+
   return (
     <div className="min-h-screen bg-white font-sans text-[#1E3A5F]">
       <LandingNavbar />
@@ -63,9 +109,10 @@ export default async function WalletPage() {
           Wallet
         </h1>
         <p className="mt-3 max-w-2xl text-pretty text-[#1E3A5F]/75">
-          Credits from race winnings, event earnings (for producers), entry withdrawals, and future
-          membership top-ups appear here. Processing fees apply when money leaves Peer Racing (e.g.
-          refund to your card). Bank transfers out will be added later.
+          Credits from race winnings, event earnings (for producers), and entry withdrawals appear
+          here. Spend your balance on race entries anytime for free, or cash out to your bank below
+          (flat {formatUsdFromCents(PAYOUT_FLAT_FEE_CENTS)} processing fee when money leaves Peer
+          Racing).
         </p>
 
         <div className="mt-8 rounded-xl border border-[#1E3A5F]/10 bg-[#fafbfc] p-6 shadow-sm">
@@ -74,6 +121,17 @@ export default async function WalletPage() {
             {formatUsdFromCents(balanceCents)}
           </p>
         </div>
+
+        {cashOutAvailable ? (
+          <CashOutCard
+            balanceCents={balanceCents}
+            minCents={MIN_PAYOUT_CENTS}
+            feeCents={PAYOUT_FLAT_FEE_CENTS}
+            payoutsEnabled={Boolean(connectAccount?.payouts_enabled)}
+            onboardingStarted={Boolean(connectAccount)}
+            requests={payoutRequests}
+          />
+        ) : null}
 
         <section className="mt-10">
           <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Activity</h2>

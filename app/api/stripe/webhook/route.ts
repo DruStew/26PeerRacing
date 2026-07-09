@@ -5,6 +5,7 @@ import type Stripe from "stripe";
 import { fulfillMembershipFromSession, fulfillRaceEntryFromSession } from "@/lib/stripe/fulfill";
 import { syncMembershipFromSubscription } from "@/lib/stripe/membership-subscription";
 import { getStripe } from "@/lib/stripe/server";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
 export const runtime = "nodejs";
 
@@ -56,6 +57,23 @@ export async function POST(request: Request) {
     if (subId && stripe) {
       const sub = await stripe.subscriptions.retrieve(subId);
       await syncMembershipFromSubscription(sub);
+    }
+  }
+
+  // Connect Express onboarding progress → mirror payout status into the DB so
+  // the wallet page flips to "cash out" without waiting for a manual refresh.
+  if (event.type === "account.updated") {
+    const account = event.data.object as Stripe.Account;
+    const service = createServiceRoleSupabaseClient();
+    if (service && account.id) {
+      await service
+        .from("stripe_connect_accounts")
+        .update({
+          details_submitted: Boolean(account.details_submitted),
+          payouts_enabled: Boolean(account.payouts_enabled),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("stripe_account_id", account.id);
     }
   }
 

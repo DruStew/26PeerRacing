@@ -102,6 +102,12 @@ export default async function AdminDashboardPage() {
             <span className="text-[#1E3A5F]/60"> — checks paid, runner payouts, promoter earnings (restricted)</span>
           </li>
           <li>
+            <Link href="/admin/payouts" className="font-medium text-[#E87722] hover:underline">
+              Payouts & Coverage
+            </Link>
+            <span className="text-[#1E3A5F]/60"> — cash-out history, manual payout recording, one-pool reconciliation</span>
+          </li>
+          <li>
             <Link href="/admin/memberships" className="font-medium text-[#E87722] hover:underline">
               Membership Tiers
             </Link>
