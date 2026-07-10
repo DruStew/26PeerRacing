@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { computeConsoleResults, MIN_FINISHERS } from "@/lib/results-console/compute";
+import { computeConsoleResults } from "@/lib/results-console/compute";
 import { loadFinishersForDistance } from "@/lib/results-console/finishers";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
 
@@ -123,15 +123,8 @@ async function computeDistanceOutcomes(
   const { finishers } = await loadFinishersForDistance(service, eventId, distanceId);
   const byEntryId = new Map<string, DistanceOutcome>();
 
-  if (finishers.length < MIN_FINISHERS) {
-    const note =
-      finishers.length === 0
-        ? "No finish times imported for this race yet."
-        : `Divisions need at least ${MIN_FINISHERS} finishers (this race has ${finishers.length}).`;
-    for (const f of finishers) {
-      byEntryId.set(f.entryId, { ...emptyOutcome(finishers.length, note), finishTimeMs: f.timeMs });
-    }
-    return { byEntryId, finisherCount: finishers.length, note };
+  if (finishers.length === 0) {
+    return { byEntryId, finisherCount: 0, note: "No finish times imported for this race yet." };
   }
 
   const [{ data: settings }, { count: registeredEntryCount }] = await Promise.all([

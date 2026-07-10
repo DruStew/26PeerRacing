@@ -145,7 +145,10 @@ export function ResultsConsoleClient({
   }, [loadDistance]);
 
   const hasLiveTimes = realFinishers.length > 0;
-  const canRunAlgorithm = realFinishers.length >= MIN_FINISHERS;
+  // Any field size computes and publishes; below MIN_FINISHERS everyone lands
+  // in a single division (Alpha) since the curve needs a bigger field.
+  const canRunAlgorithm = realFinishers.length > 0;
+  const smallField = hasLiveTimes && realFinishers.length < MIN_FINISHERS;
 
   const userIdByAlgoId = useMemo(() => {
     const m = new Map<string, string>();
@@ -285,11 +288,11 @@ export function ResultsConsoleClient({
                 ? ` (${importedRowCount - realFinishers.length} other imported rows are unmatched, ignored, or non-finishes)`
                 : ""}
               . Updates automatically as times are added or changed — not published until you publish.
-              {!canRunAlgorithm ? (
+              {smallField ? (
                 <>
                   {" "}
-                  Need at least {MIN_FINISHERS} finishers before divisions and publish unlock (
-                  {realFinishers.length}/{MIN_FINISHERS} so far).
+                  Fields under {MIN_FINISHERS} finishers run as a single division (everyone in
+                  Alpha); multi-division splits kick in at {MIN_FINISHERS}+.
                 </>
               ) : null}
             </p>
@@ -440,14 +443,6 @@ export function ResultsConsoleClient({
       {loading ? <p className="text-sm text-[#1E3A5F]/70">Loading finish times…</p> : null}
       {compError ? (
         <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">{compError}</p>
-      ) : null}
-
-      {hasLiveTimes && !canRunAlgorithm ? (
-        <LiveFinisherList
-          finishers={realFinishers}
-          raceLabel={selectedLabel}
-          eventId={eventId}
-        />
       ) : null}
 
       {comp ? (
@@ -619,7 +614,7 @@ export function ResultsConsoleClient({
                 <p className="mt-1 max-w-xl text-xs text-[#1E3A5F]/65">
                   {canRunAlgorithm
                     ? "Publishing recomputes divisions and payouts on the server from the live finish times and your saved payout settings, writes the official results, and awards badges to each racer's trophy case."
-                    : `Publish unlocks once at least ${MIN_FINISHERS} finishers have times for this distance.`}
+                    : "Publish unlocks once at least one finisher has a time for this distance."}
                 </p>
                 {resultsPublishedAt ? (
                   <p className="mt-2 text-xs font-semibold text-emerald-800">
@@ -686,73 +681,6 @@ function sourceLabel(source: string | null | undefined): string {
   if (source === "manual:roster") return "Roster";
   if (source.startsWith("manual:")) return "Manual";
   return "CSV";
-}
-
-/** Live finisher table shown before enough runners exist to run divisions. */
-function LiveFinisherList({
-  finishers,
-  raceLabel,
-  eventId,
-}: {
-  finishers: RealFinisher[];
-  raceLabel: string;
-  eventId: string;
-}) {
-  return (
-    <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-      <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Live Finishers — {raceLabel}</h2>
-      <p className="mt-1 text-xs text-[#1E3A5F]/65">
-        Provisional list — updates as times are entered on the roster or imported from timing. Divisions and payouts
-        appear once {MIN_FINISHERS} or more finishers have times.
-      </p>
-      <div className="mt-4 overflow-x-auto rounded-lg border border-[#1E3A5F]/10">
-        <table className="w-full text-sm">
-          <thead className="bg-[#fafbfc] text-left text-xs uppercase tracking-wide text-[#1E3A5F]/55">
-            <tr>
-              <th className="px-3 py-2 font-semibold">Place</th>
-              <th className="px-3 py-2 font-semibold">Bib</th>
-              <th className="px-3 py-2 font-semibold">PR ID</th>
-              <th className="px-3 py-2 font-semibold">Runner</th>
-              <th className="px-3 py-2 text-right font-semibold">Time</th>
-              <th className="px-3 py-2 font-semibold">Source</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#1E3A5F]/10">
-            {finishers.map((f, idx) => (
-              <tr key={f.entryId}>
-                <td className="px-3 py-2 tabular-nums font-semibold text-[#1E3A5F]">{idx + 1}</td>
-                <td className="px-3 py-2 font-mono text-xs text-[#1E3A5F]/80">{f.bib || "—"}</td>
-                <td className="px-3 py-2 font-mono text-xs text-[#1E3A5F]/80">{f.prId ?? "—"}</td>
-                <td className="px-3 py-2 text-[#1E3A5F]">
-                  {f.userId ? (
-                    <Link
-                      href={`/promoter/events/${eventId}/racer/${f.userId}`}
-                      className="font-medium underline-offset-2 hover:text-[#E87722] hover:underline"
-                    >
-                      {f.first} {f.last}
-                    </Link>
-                  ) : (
-                    <>
-                      {f.first} {f.last}
-                    </>
-                  )}
-                  <span className="ml-2 text-xs text-[#1E3A5F]/50">
-                    {f.sex === "Female" ? "F" : "M"}
-                    {f.military ? " · MIL" : ""}
-                    {f.age ? ` · ${f.age}` : ""}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-right font-mono text-sm tabular-nums font-semibold text-[#1E3A5F]">
-                  {f.timeDisplay ?? formatMs(f.timeMs)}
-                </td>
-                <td className="px-3 py-2 text-xs text-[#1E3A5F]/65">{sourceLabel(f.source)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
 }
 
 function RunnerTable({

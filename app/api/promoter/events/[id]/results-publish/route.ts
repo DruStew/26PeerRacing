@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { computeConsoleResults, MIN_FINISHERS } from "@/lib/results-console/compute";
+import { computeConsoleResults } from "@/lib/results-console/compute";
 import { loadFinishersForDistance, type FinisherRow } from "@/lib/results-console/finishers";
 import { DEMO_PUBLISH_BLOCKED, loadEventIsDemo } from "@/lib/demo/event";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
@@ -172,9 +172,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const maxPercentile = Math.min(100, Math.max(50, Number(body.max_percentile ?? 95)));
 
   const { finishers } = await loadFinishersForDistance(service, eventId, distanceId);
-  if (finishers.length < MIN_FINISHERS) {
+  if (finishers.length === 0) {
     return NextResponse.json(
-      { ok: false, error: `Need at least ${MIN_FINISHERS} matched finishers to publish (have ${finishers.length}).` },
+      { ok: false, error: "Need at least one matched finisher to publish." },
       { status: 400 },
     );
   }

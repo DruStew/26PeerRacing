@@ -97,8 +97,8 @@ export function fmtTime(totalSeconds: number): string {
 export function computeConsoleResults(params: ComputeParams): ConsoleComputation | { error: string } {
   const { rows, settings, distanceId, liveFeeCents, registeredEntryCount, minPercentile, maxPercentile } = params;
 
-  if (rows.length < MIN_FINISHERS) {
-    return { error: `Need at least ${MIN_FINISHERS} finishers to compute divisions.` };
+  if (rows.length === 0) {
+    return { error: "No finishers with times yet." };
   }
 
   const d = settings ?? {
@@ -108,11 +108,17 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
   };
 
   const finishers = rows.length;
+  // Fields below MIN_FINISHERS don't carry enough signal for the multi-division
+  // curve — collapse to a single division (everyone in Alpha) so tiny races can
+  // still compute and publish.
+  const smallField = finishers < MIN_FINISHERS;
   const femaleCount = rows.filter((r) => r.sex === "Female").length;
   const militaryCount = rows.filter((r) => r.military).length;
   const feeCents = d.entry_fee_cents_override ?? liveFeeCents;
-  const divisionCount = Math.min(5, Math.max(1, d.division_count));
+  const divisionCount = smallField ? 1 : Math.min(5, Math.max(1, d.division_count));
   const divisionLabels = [...DIVISION_NAMES.slice(0, divisionCount)];
+  const femaleIncentiveDivisionCount = smallField ? 1 : (d.female_incentive_division_count ?? 1);
+  const militaryIncentiveDivisionCount = smallField ? 1 : (d.military_incentive_division_count ?? 1);
 
   const input: PayoutCalculationInput = {
     entryCount: d.entry_count_override ?? registeredEntryCount ?? finishers,
@@ -123,17 +129,17 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
     producerFractionOfPrHolding: Number(d.producer_fraction_of_pr_holding),
     trueAddedMoneyCents: d.true_added_money_cents,
     femaleIncentiveFromRacersPotCents: d.female_incentive_cents ?? 0,
-    femaleIncentiveDivisionCount: d.female_incentive_division_count ?? 1,
+    femaleIncentiveDivisionCount,
     // Incentive pools always pay the full schedule column; the column's holes define the payout depth.
     femaleIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
-    femaleIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, d.female_incentive_division_count ?? 1)],
+    femaleIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, femaleIncentiveDivisionCount)],
     femaleIncentiveScheduleMode: d.female_incentive_schedule_mode ?? "auto",
     femaleIncentiveManualBracket: d.female_incentive_manual_bracket ?? undefined,
     femaleIncentiveBracketEntryCount: femaleCount,
     militaryIncentiveFromRacersPotCents: d.military_incentive_cents ?? 0,
-    militaryIncentiveDivisionCount: d.military_incentive_division_count ?? 1,
+    militaryIncentiveDivisionCount,
     militaryIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
-    militaryIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, d.military_incentive_division_count ?? 1)],
+    militaryIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, militaryIncentiveDivisionCount)],
     militaryIncentiveScheduleMode: d.military_incentive_schedule_mode ?? "auto",
     militaryIncentiveManualBracket: d.military_incentive_manual_bracket ?? undefined,
     militaryIncentiveBracketEntryCount: militaryCount,
@@ -160,7 +166,7 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
       title: "Female incentive",
       variant: "female",
       criteria: "female",
-      divisionCount: d.female_incentive_division_count ?? 1,
+      divisionCount: femaleIncentiveDivisionCount,
       payoutDivisions: payout.femaleIncentiveDivisions,
     });
   }
@@ -170,7 +176,7 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
       title: "Military incentive",
       variant: "military",
       criteria: "military",
-      divisionCount: d.military_incentive_division_count ?? 1,
+      divisionCount: militaryIncentiveDivisionCount,
       payoutDivisions: payout.militaryIncentiveDivisions,
     });
   }
