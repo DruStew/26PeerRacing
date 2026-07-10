@@ -453,7 +453,17 @@ export function FinishCamClient({ eventId, distances: distancesIn }: Props) {
           );
           const json = (await res.json()) as { ok: boolean; retry?: boolean; matched_keys?: string[] };
           if (json.ok) {
-            clipQueueRef.current.shift();
+            // Partial match: some crossings hadn't synced yet — keep retrying
+            // the job with just the unmatched keys so those runners still get
+            // the clip attached.
+            const matched = new Set(json.matched_keys ?? []);
+            const remaining = job.keys.filter((k) => !matched.has(k));
+            if (remaining.length > 0 && job.attempts < 20) {
+              job.keys = remaining;
+              job.attempts += 1;
+            } else {
+              clipQueueRef.current.shift();
+            }
           } else if (json.retry) {
             // Crossings not synced yet — retry later (cap attempts).
             job.attempts += 1;
