@@ -16,6 +16,14 @@ const { AR } = jsAruco;
 export const TAG_FAMILY = "ARUCO_MIP_36h12";
 export const TAG_CAPACITY = 250;
 
+/**
+ * Max bit-errors accepted when decoding. Codes in this family are ≥12 bits
+ * apart, so ≤5 errors still decodes unambiguously. The library default
+ * (tau of 12) is far too loose — logos/text in the scene can ghost-match
+ * with ~10 bit errors.
+ */
+export const TAG_MAX_HAMMING = 5;
+
 let dictionary: jsAruco.AR.Dictionary | null = null;
 
 function getDictionary(): jsAruco.AR.Dictionary {
@@ -23,37 +31,13 @@ function getDictionary(): jsAruco.AR.Dictionary {
   return dictionary;
 }
 
-/** Raw marker SVG markup (square, includes white quiet zone). */
+/**
+ * Raw marker SVG markup (square, includes the quiet zone). Print-ready
+ * branded stickers live in ./tag-sticker (server-only — pulls in fonts).
+ */
 export function markerSvg(tagId: number): string {
   if (!Number.isInteger(tagId) || tagId < 0 || tagId >= TAG_CAPACITY) {
     throw new Error(`tag id out of range 0..${TAG_CAPACITY - 1}`);
   }
   return getDictionary().generateSVG(tagId);
-}
-
-/**
- * A complete print-ready sticker: marker + human-readable tag number +
- * placement instruction. Sized in inches via the svg width/height attrs
- * so print output is physically correct.
- */
-export function stickerSvg(tagId: number, opts?: { widthIn?: number }): string {
-  const widthIn = opts?.widthIn ?? 3.5;
-  // Layout in abstract units: 100 wide; marker 84 with 8 margin; text below.
-  const W = 100;
-  const H = 118;
-  const heightIn = (widthIn * H) / W;
-  // Nest the marker svg inside the sticker (xmlns comes from the parent).
-  const marker = markerSvg(tagId).replace(
-    '<svg xmlns="http://www.w3.org/2000/svg"',
-    '<svg x="8" y="8" width="84" height="84"',
-  );
-
-  return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${widthIn}in" height="${heightIn.toFixed(3)}in" viewBox="0 0 ${W} ${H}">`,
-    `<rect x="0" y="0" width="${W}" height="${H}" fill="white"/>`,
-    marker,
-    `<text x="50" y="101" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="bold" fill="black">PR TIMING TAG ${String(tagId).padStart(3, "0")}</text>`,
-    `<text x="50" y="110" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="5.4" fill="black">Stick flat on the FRONT of the bib. Do not fold or cover.</text>`,
-    `</svg>`,
-  ].join("");
 }

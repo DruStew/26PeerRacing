@@ -4,7 +4,7 @@ import * as jsAruco from "js-aruco2";
 
 const { AR } = jsAruco;
 
-import { TAG_FAMILY } from "@/lib/timing/tags";
+import { TAG_FAMILY, TAG_MAX_HAMMING } from "@/lib/timing/tags";
 
 /**
  * Client-side marker detection on a live camera stream. Frames are
@@ -40,7 +40,10 @@ export class TagDetectorLoop {
     this.video = video;
     this.onDetections = onDetections;
     this.intervalMs = opts?.intervalMs ?? 120;
-    this.detector = new AR.Detector({ dictionaryName: TAG_FAMILY });
+    this.detector = new AR.Detector({
+      dictionaryName: TAG_FAMILY,
+      maxHammingDistance: TAG_MAX_HAMMING,
+    });
     this.canvas = document.createElement("canvas");
     const ctx = this.canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) throw new Error("Canvas 2D unavailable");

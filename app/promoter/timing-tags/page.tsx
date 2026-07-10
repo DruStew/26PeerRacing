@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { stickerSvg, TAG_CAPACITY } from "@/lib/timing/tags";
+import { stickerSvg } from "@/lib/timing/tag-sticker";
+import { TAG_CAPACITY } from "@/lib/timing/tags";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
