@@ -7,16 +7,20 @@ import { LOGIK_FONT_BASE64, PR_LOGO_SVG } from "@/lib/checkpoints/assets.generat
 import { markerSvg, TAG_CAPACITY } from "./tags";
 
 /**
- * Print-ready timing tag stickers: brand-colored ArUco marker (navy modules
- * on orange), the full-color PR logo, and the tag number set in the brand
- * font as outlined vector paths — fully self-contained SVG, no linked assets.
+ * Print-ready timing tag stickers sized for the Avery 5164/8164/5523 family:
+ * 4in x 3-1/3in, six per letter sheet. Black-and-white by design — maximum
+ * camera contrast and prints on anything, including mono laser printers.
+ *
+ * Layout: marker on the left, PR logo (solid black) and tag number (brand
+ * font, outlined to vector paths) stacked on the right. Fully self-contained
+ * SVG — no linked fonts or images.
  *
  * Server-only because it pulls in opentype.js plus the embedded font/logo;
  * the client-side scanner only needs the lean helpers in ./tags.
  */
 
-const NAVY = "#002F48";
-const ORANGE = "#F26822";
+export const STICKER_WIDTH_IN = 4;
+export const STICKER_HEIGHT_IN = 10 / 3;
 
 let cachedFont: opentype.Font | null = null;
 function brandFont(): opentype.Font {
@@ -27,9 +31,10 @@ function brandFont(): opentype.Font {
 }
 
 let cachedLogo: { inner: string; width: number; aspect: number } | null = null;
-function brandLogo(): { inner: string; width: number; aspect: number } {
+/** PR logo recolored to solid black (its brand colors live in a <style> block). */
+function blackLogo(): { inner: string; width: number; aspect: number } {
   if (cachedLogo) return cachedLogo;
-  const raw = PR_LOGO_SVG;
+  const raw = PR_LOGO_SVG.replace(/#f26822/gi, "#000000").replace(/#002f48/gi, "#000000");
   const viewBox = raw.match(/viewBox="([\d.\s-]+)"/)?.[1]?.split(/\s+/).map(Number);
   const vw = viewBox?.[2] ?? 1920;
   const vh = viewBox?.[3] ?? 986.85;
@@ -57,51 +62,55 @@ function pathDataFromCommands(commands: opentype.PathCommand[]): string {
 }
 
 /**
- * A complete print-ready sticker. Sized in inches via the svg width/height
- * attrs so print output is physically correct.
+ * One Avery 5164 label (4in x 3-1/3in). Coordinate space is 120x100 units,
+ * i.e. 30 units per inch.
  */
-export function stickerSvg(tagId: number, opts?: { widthIn?: number }): string {
+export function stickerSvg(tagId: number): string {
   if (!Number.isInteger(tagId) || tagId < 0 || tagId >= TAG_CAPACITY) {
     throw new Error(`tag id out of range 0..${TAG_CAPACITY - 1}`);
   }
 
-  const widthIn = opts?.widthIn ?? 3.5;
-  // Layout in abstract units: 100 wide; marker on top, logo + tag # footer.
-  const W = 100;
-  const H = 116;
-  const heightIn = (widthIn * H) / W;
+  const W = 120;
+  const H = 100;
 
-  // Recolor the marker: dark modules navy, light modules (and the built-in
-  // quiet zone, which the detector needs in the light color) orange.
-  const marker = markerSvg(tagId)
-    .replace(
-      '<svg xmlns="http://www.w3.org/2000/svg"',
-      '<svg x="8" y="6" width="84" height="84"',
-    )
-    .replace(/fill="black"/g, `fill="${NAVY}"`)
-    .replace(/fill="white"/g, `fill="${ORANGE}"`);
+  // Marker fills the left side: 84 units = 2.8in square (quiet zone included).
+  const markerSize = 84;
+  const markerX = 5;
+  const markerY = (H - markerSize) / 2;
+  const marker = markerSvg(tagId).replace(
+    '<svg xmlns="http://www.w3.org/2000/svg"',
+    `<svg x="${markerX}" y="${markerY}" width="${markerSize}" height="${markerSize}"`,
+  );
 
-  // Footer: full-color PR logo on the left, tag number on the right.
-  const logo = brandLogo();
-  const logoH = 15;
-  const logoW = logoH * logo.aspect;
-  const logoX = 8;
-  const logoY = 95;
+  // Right column: logo over tag number, vertically centered as a block.
+  const colX = markerX + markerSize + 4;
+  const colW = W - colX - 4;
+
+  const logo = blackLogo();
+  const logoW = colW;
+  const logoH = logoW / logo.aspect;
 
   const font = brandFont();
   const label = String(tagId).padStart(3, "0");
-  const textSize = 15;
-  const textWidth = font.getAdvanceWidth(label, textSize);
-  const textX = 92 - textWidth;
-  const textBaseline = logoY + logoH / 2 + textSize * 0.36;
+  let textSize = 16;
+  const widthAt = (s: number) => font.getAdvanceWidth(label, s);
+  if (widthAt(textSize) > colW) textSize = (textSize * colW) / widthAt(textSize);
+  const textW = widthAt(textSize);
+  const capH = textSize * 0.72;
+
+  const gap = 6;
+  const blockH = logoH + gap + capH;
+  const logoY = (H - blockH) / 2;
+  const textBaseline = logoY + logoH + gap + capH;
+  const textX = colX + (colW - textW) / 2;
   const textPath = pathDataFromCommands(font.getPath(label, textX, textBaseline, textSize).commands);
 
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${widthIn}in" height="${heightIn.toFixed(3)}in" viewBox="0 0 ${W} ${H}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${STICKER_WIDTH_IN}in" height="${STICKER_HEIGHT_IN.toFixed(4)}in" viewBox="0 0 ${W} ${H}">`,
     `<rect x="0" y="0" width="${W}" height="${H}" fill="white"/>`,
     marker,
-    `<g transform="translate(${logoX} ${logoY}) scale(${(logoW / logo.width).toFixed(6)})">${logo.inner}</g>`,
-    `<path d="${textPath}" fill="${NAVY}"/>`,
+    `<g transform="translate(${colX} ${logoY.toFixed(2)}) scale(${(logoW / logo.width).toFixed(6)})">${logo.inner}</g>`,
+    `<path d="${textPath}" fill="#000000"/>`,
     `</svg>`,
   ].join("");
 }
