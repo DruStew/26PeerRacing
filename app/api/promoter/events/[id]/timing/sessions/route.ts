@@ -5,9 +5,9 @@ import { gateTimingApi } from "@/lib/timing/server";
 export const dynamic = "force-dynamic";
 
 /** GET — list this event's capture sessions (newest first). */
-export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id: eventId } = await ctx.params;
-  const gated = await gateTimingApi(eventId);
+  const gated = await gateTimingApi(request, eventId);
   if (!gated.ok) return gated.response;
 
   const { data, error } = await gated.service
@@ -23,7 +23,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 /** POST { label?, clock_offset_ms? } — start a new capture session. */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id: eventId } = await ctx.params;
-  const gated = await gateTimingApi(eventId);
+  const gated = await gateTimingApi(request, eventId);
   if (!gated.ok) return gated.response;
 
   let body: { label?: string; clock_offset_ms?: number };

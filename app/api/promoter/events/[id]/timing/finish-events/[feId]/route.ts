@@ -16,7 +16,7 @@ export async function PATCH(
   ctx: { params: Promise<{ id: string; feId: string }> },
 ) {
   const { id: eventId, feId } = await ctx.params;
-  const gated = await gateTimingApi(eventId);
+  const gated = await gateTimingApi(request, eventId);
   if (!gated.ok) return gated.response;
   const service = gated.service;
 

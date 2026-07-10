@@ -23,7 +23,7 @@ export async function POST(
   ctx: { params: Promise<{ id: string; sessionId: string }> },
 ) {
   const { id: eventId, sessionId } = await ctx.params;
-  const gated = await gateTimingApi(eventId);
+  const gated = await gateTimingApi(request, eventId);
   if (!gated.ok) return gated.response;
 
   let body: { events?: IncomingEvent[] };

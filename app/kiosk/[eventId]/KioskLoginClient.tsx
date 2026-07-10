@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function KioskLoginClient({ eventId }: { eventId: string }) {
+export function KioskLoginClient({ eventId, next }: { eventId: string; next?: string | null }) {
   const router = useRouter();
   const [digits, setDigits] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export function KioskLoginClient({ eventId }: { eventId: string }) {
       const res = await fetch("/api/kiosk/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId, kioskCode: code }),
+        body: JSON.stringify({ eventId, kioskCode: code, next: next ?? undefined }),
       });
       const json = (await res.json()) as { ok?: boolean; error?: string; redirect?: string };
       if (!res.ok) {

@@ -68,6 +68,40 @@ export default async function RacerResultDetailPage({
     service.from("profiles").select("first_name,last_name").eq("id", user.id).maybeSingle(),
     resolveSponsorLogo(service, r.eventId, r.distanceId),
   ]);
+
+  // Finish-cam clip (camera-timed races): confirmed crossing with a clip.
+  let finishClip: { url: string; startSeconds: number } | null = null;
+  {
+    const { data: myEntries } = await service
+      .from("entries")
+      .select("id")
+      .eq("event_id", r.eventId)
+      .eq("distance_id", r.distanceId)
+      .eq("user_id", user.id);
+    const entryIds = (myEntries ?? []).map((e) => (e as { id: string }).id);
+    if (entryIds.length > 0) {
+      const { data: fe } = await service
+        .from("timing_finish_events")
+        .select("crossed_at,detail")
+        .eq("event_id", r.eventId)
+        .eq("status", "confirmed")
+        .in("entry_id", entryIds)
+        .not("detail->>clip_path", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if (fe) {
+        const row = fe as { crossed_at: string; detail: { clip_path?: string; clip_start_ms?: number } };
+        if (row.detail.clip_path) {
+          const { data: pub } = service.storage.from("finish-clips").getPublicUrl(row.detail.clip_path);
+          const startSeconds =
+            typeof row.detail.clip_start_ms === "number"
+              ? Math.max(0, (new Date(row.crossed_at).getTime() - row.detail.clip_start_ms) / 1000 - 6)
+              : 0;
+          finishClip = { url: pub.publicUrl, startSeconds };
+        }
+      }
+    }
+  }
   const runnerName = profile
     ? `${(profile as { first_name: string | null }).first_name ?? ""} ${
         (profile as { last_name: string | null }).last_name ?? ""
@@ -213,6 +247,30 @@ export default async function RacerResultDetailPage({
             </p>
           </section>
         )}
+
+        {/* finish-cam clip */}
+        {finishClip ? (
+          <section className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
+            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Your Finish</h2>
+            <p className="mt-1 text-sm text-[#1E3A5F]/65">
+              Caught by the finish camera — download it and post it with your result card.
+            </p>
+            <video
+              src={`${finishClip.url}#t=${finishClip.startSeconds.toFixed(1)}`}
+              controls
+              playsInline
+              preload="metadata"
+              className="mt-3 w-full rounded-lg bg-black"
+            />
+            <a
+              href={finishClip.url}
+              download
+              className="mt-3 inline-flex items-center justify-center rounded-md bg-[#1E3A5F] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1E3A5F]/90"
+            >
+              Download clip
+            </a>
+          </section>
+        ) : null}
 
         {/* social share studio */}
         <section className="mt-6">

@@ -8,9 +8,9 @@ import { hashSessionToken, newSessionToken } from "@/lib/kiosk/session-token";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  let body: { eventId?: string; kioskCode?: string };
+  let body: { eventId?: string; kioskCode?: string; next?: string };
   try {
-    body = (await request.json()) as { eventId?: string; kioskCode?: string };
+    body = (await request.json()) as { eventId?: string; kioskCode?: string; next?: string };
   } catch {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
@@ -96,9 +96,16 @@ export async function POST(request: Request) {
 
   const terminalId = (term as { id: string }).id;
   const cookieVal = `${terminalId}:${token}`;
+
+  // Optional post-login destination (Finish Cam / Race Control devices).
+  // Only same-event pages are allowed.
+  const nextRaw = typeof body.next === "string" ? body.next : "";
+  const allowedNext =
+    nextRaw.startsWith(`/events/${eventId}/`) && !nextRaw.startsWith("//") ? nextRaw : null;
+
   const res = NextResponse.json({
     ok: true,
-    redirect: `/events/${eventId}/check-in`,
+    redirect: allowedNext ?? `/events/${eventId}/check-in`,
     terminalLabel: `T${nextIndex}`,
   });
   res.cookies.set(kioskCookieName(), cookieVal, {

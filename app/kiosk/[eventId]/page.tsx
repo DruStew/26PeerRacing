@@ -6,8 +6,15 @@ import { formatCalendarDate } from "@/lib/format-calendar-date";
 
 import { KioskLoginClient } from "./KioskLoginClient";
 
-export default async function KioskEventPage({ params }: { params: Promise<{ eventId: string }> }) {
+export default async function KioskEventPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ eventId: string }>;
+  searchParams: Promise<{ next?: string }>;
+}) {
   const { eventId } = await params;
+  const { next } = await searchParams;
 
   const supabase = await createServerSupabaseClient();
   const { data: event, error } = await supabase
@@ -36,7 +43,7 @@ export default async function KioskEventPage({ params }: { params: Promise<{ eve
         Enter the <strong>6-digit kiosk code</strong> from your race director to open the check-in desk on this
         tablet.
       </p>
-      <KioskLoginClient eventId={eventId} />
+      <KioskLoginClient eventId={eventId} next={next ?? null} />
     </KioskShell>
   );
 }

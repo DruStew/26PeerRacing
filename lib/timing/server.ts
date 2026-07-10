@@ -3,47 +3,24 @@ import "server-only";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { authKioskOrPromoterForEvent } from "@/lib/kiosk/auth-kiosk-or-promoter-event";
 import { formatMs } from "@/lib/results-import/parse";
-import { loadEventForPromoterTools } from "@/lib/promoter/event-access";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 
-/** Shared gate for timing APIs: event promoter/admin + service client. */
-export async function gateTimingApi(eventId: string): Promise<
-  | { ok: true; service: SupabaseClient; userId: string }
+/**
+ * Shared gate for timing APIs: a kiosk terminal session (borrowed phone /
+ * volunteer laptop with the 6-digit code) OR the event promoter / platform
+ * admin. userId is null for kiosk terminals.
+ */
+export async function gateTimingApi(
+  request: Request,
+  eventId: string,
+): Promise<
+  | { ok: true; service: SupabaseClient; userId: string | null }
   | { ok: false; response: NextResponse }
 > {
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return {
-      ok: false,
-      response: NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 }),
-    };
-  }
-  const loaded = await loadEventForPromoterTools(supabase, user.id, eventId, "id,promoter_id");
-  if (!loaded.ok) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, error: loaded.reason === "not_found" ? "Event not found" : "Forbidden" },
-        { status: loaded.reason === "not_found" ? 404 : 403 },
-      ),
-    };
-  }
-  const service = createServiceRoleSupabaseClient();
-  if (!service) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { ok: false, error: "Server is missing SUPABASE_SERVICE_ROLE_KEY." },
-        { status: 503 },
-      ),
-    };
-  }
-  return { ok: true, service, userId: user.id };
+  const auth = await authKioskOrPromoterForEvent(request, eventId);
+  if (!auth.ok) return { ok: false, response: auth.response };
+  return { ok: true, service: auth.admin, userId: null };
 }
 
 /**
