@@ -95,6 +95,19 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     }
   }
 
+  // Stopped clocks freeze the big-screen race clock.
+  const stopByDistance: Record<string, number> = {};
+  {
+    const { data: clocks } = await service
+      .from("timing_race_clocks")
+      .select("distance_id,stopped_at")
+      .eq("event_id", eventId);
+    for (const c of clocks ?? []) {
+      const row = c as { distance_id: string; stopped_at: string | null };
+      if (row.stopped_at) stopByDistance[row.distance_id] = new Date(row.stopped_at).getTime();
+    }
+  }
+
   // Live (provisional) finishers.
   const liveFinishers = ((rawRows ?? []) as {
     matched_entry_id: string | null;
@@ -172,6 +185,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
         label: d.label,
         published: d.results_published_at !== null,
         gun_at_ms: gunByDistance[d.id] ?? null,
+        stopped_at_ms: stopByDistance[d.id] ?? null,
       })),
       roster: entries.map((e) => ({
         distance_id: e.distance_id,

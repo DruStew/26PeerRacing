@@ -77,6 +77,11 @@ export function RaceControlClient({
   const [sessions, setSessions] = useState<Session[]>([]);
   const [gunMarks, setGunMarks] = useState<GunMark[]>([]);
   const [events, setEvents] = useState<FinishEvent[]>([]);
+  const [clockStops, setClockStops] = useState<{ distance_id: string; stopped_at: string | null }[]>([]);
+  const [dnfIds, setDnfIds] = useState<string[]>([]);
+  const [checkedInIds, setCheckedInIds] = useState<string[]>([]);
+  /** Distances where the "all racers finished" banner was dismissed without stopping. */
+  const [finishPromptDismissed, setFinishPromptDismissed] = useState<Record<string, boolean>>({});
   const [bigScreenPublic, setBigScreenPublic] = useState(initialBigScreenPublic);
   const [autoConfirm, setAutoConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,11 +130,17 @@ export function RaceControlClient({
         sessions: Session[];
         gun_marks: GunMark[];
         events: FinishEvent[];
+        clock_stops?: { distance_id: string; stopped_at: string | null }[];
+        dnf_entry_ids?: string[];
+        checked_in_entry_ids?: string[];
       };
       if (!json.ok) return;
       setSessions(json.sessions);
       setGunMarks(json.gun_marks);
       setEvents(json.events);
+      setClockStops(json.clock_stops ?? []);
+      setDnfIds(json.dnf_entry_ids ?? []);
+      setCheckedInIds(json.checked_in_entry_ids ?? []);
       setBigScreenPublic(json.big_screen_public);
       const active = json.sessions.find((s) => s.status === "active");
       if (active) sessionIdRef.current = active.id;
@@ -282,6 +293,141 @@ export function RaceControlClient({
     [events],
   );
   const confirmed = useMemo(() => events.filter((f) => f.status === "confirmed"), [events]);
+
+  // ---- who is still on the course --------------------------------------------
+  const stopByDistance = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of clockStops) {
+      if (c.stopped_at) m.set(c.distance_id, new Date(c.stopped_at).getTime());
+    }
+    return m;
+  }, [clockStops]);
+  const dnfSet = useMemo(() => new Set(dnfIds), [dnfIds]);
+  const checkedInSet = useMemo(() => new Set(checkedInIds), [checkedInIds]);
+  const finishedEntryIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const f of confirmed) if (f.entry_id) s.add(f.entry_id);
+    return s;
+  }, [confirmed]);
+
+  /** Checked-in runners per distance who have neither finished nor DNF'd. */
+  const onCourseByDistance = useMemo(() => {
+    const m = new Map<string, Entry[]>();
+    for (const e of entries) {
+      if (!checkedInSet.has(e.id)) continue;
+      if (finishedEntryIds.has(e.id) || dnfSet.has(e.id)) continue;
+      const list = m.get(e.distance_id) ?? [];
+      list.push(e);
+      m.set(e.distance_id, list);
+    }
+    return m;
+  }, [entries, checkedInSet, finishedEntryIds, dnfSet]);
+
+  const dnfByDistance = useMemo(() => {
+    const m = new Map<string, Entry[]>();
+    for (const e of entries) {
+      if (!dnfSet.has(e.id)) continue;
+      const list = m.get(e.distance_id) ?? [];
+      list.push(e);
+      m.set(e.distance_id, list);
+    }
+    return m;
+  }, [entries, dnfSet]);
+
+  // Re-arm the "all finished" banner if someone is back on course (late walk-up).
+  useEffect(() => {
+    setFinishPromptDismissed((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const [distanceId, list] of onCourseByDistance) {
+        if (list.length > 0 && next[distanceId]) {
+          delete next[distanceId];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [onCourseByDistance]);
+
+  const checkedInCountByDistance = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of entries) {
+      if (!checkedInSet.has(e.id)) continue;
+      m.set(e.distance_id, (m.get(e.distance_id) ?? 0) + 1);
+    }
+    return m;
+  }, [entries, checkedInSet]);
+
+  // ---- stop / resume clock, DNF ------------------------------------------------
+  const setClock = useCallback(
+    async (distanceId: string, action: "stop" | "resume") => {
+      try {
+        const res = await fetch(`/api/promoter/events/${eventId}/timing/clock`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            distance_id: distanceId,
+            action,
+            ...(action === "stop" ? { stopped_at_ms: Math.round(serverNow()) } : {}),
+          }),
+        });
+        const json = (await res.json()) as { ok: boolean; error?: string };
+        if (!json.ok) setError(json.error ?? "Clock update failed.");
+        await poll();
+      } catch {
+        setError("Could not reach the server.");
+      }
+    },
+    [eventId, poll, serverNow],
+  );
+
+  /** Stop with safety nets: 1 confirm when course is clear, 3 when runners are still out. */
+  function stopClockGuarded(d: Distance) {
+    const outstanding = onCourseByDistance.get(d.id) ?? [];
+    if (outstanding.length === 0) {
+      if (window.confirm(`All racers have completed the ${d.label} course. Stop the clock?`)) {
+        void setClock(d.id, "stop");
+      }
+      return;
+    }
+    const names = outstanding.slice(0, 5).map(entryName).join(", ");
+    const more = outstanding.length > 5 ? ` +${outstanding.length - 5} more` : "";
+    if (
+      !window.confirm(
+        `Are you sure?? ${outstanding.length} racer${outstanding.length === 1 ? " is" : "s are"} still on the course:\n\n${names}${more}`,
+      )
+    ) {
+      return;
+    }
+    if (
+      !window.confirm(
+        `Stopping the clock ends timing for ${d.label}. Racers still out will need to be marked DNF (or the clock resumed). Continue?`,
+      )
+    ) {
+      return;
+    }
+    if (window.confirm(`FINAL CONFIRMATION — stop the ${d.label} clock now?`)) {
+      void setClock(d.id, "stop");
+    }
+  }
+
+  const setDnf = useCallback(
+    async (entryId: string, action: "mark" | "unmark") => {
+      try {
+        const res = await fetch(`/api/promoter/events/${eventId}/timing/dnf`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entry_id: entryId, action }),
+        });
+        const json = (await res.json()) as { ok: boolean; error?: string };
+        if (!json.ok) setError(json.error ?? "DNF update failed.");
+        await poll();
+      } catch {
+        setError("Could not reach the server.");
+      }
+    },
+    [eventId, poll],
+  );
   const gapAlerts = useMemo(
     () => events.filter((f) => (f.detail as { camera_gap?: boolean }).camera_gap === true).slice(-3),
     [events],
@@ -377,14 +523,27 @@ export function RaceControlClient({
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         {distances.map((d) => {
           const gun = latestGunByDistance.get(d.id);
+          const stoppedAt = stopByDistance.get(d.id);
           const counting = gun !== undefined && gun > now;
-          const running = gun !== undefined && gun <= now;
+          const stopped = gun !== undefined && stoppedAt !== undefined;
+          const running = gun !== undefined && gun <= now && !stopped;
+          const onCourse = onCourseByDistance.get(d.id) ?? [];
+          const dnfList = dnfByDistance.get(d.id) ?? [];
+          const checkedInCount = checkedInCountByDistance.get(d.id) ?? 0;
+          const allFinished = running && checkedInCount > 0 && onCourse.length === 0;
           return (
             <div key={d.id} className="rounded-xl border border-[#1E3A5F]/15 bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">{d.label}</p>
               {counting ? (
                 <p className="font-display mt-1 text-4xl font-black tabular-nums text-[#E87722]">
                   {Math.max(0, Math.ceil((gun - now) / 1000))}
+                </p>
+              ) : stopped ? (
+                <p className="font-display mt-1 text-4xl font-black tabular-nums text-emerald-700">
+                  {fmtElapsed(Math.max(0, stoppedAt - gun), false)}
+                  <span className="ml-2 align-middle text-sm font-bold uppercase tracking-wide text-emerald-700/80">
+                    Final — clock stopped
+                  </span>
                 </p>
               ) : running ? (
                 <p className="font-display mt-1 text-4xl font-black tabular-nums text-[#1E3A5F]">
@@ -393,8 +552,33 @@ export function RaceControlClient({
               ) : (
                 <p className="mt-1 text-2xl font-bold text-[#1E3A5F]/40">— not started —</p>
               )}
+
+              {allFinished && !finishPromptDismissed[d.id] ? (
+                <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5">
+                  <p className="text-sm font-bold text-emerald-800">
+                    🎉 All racers have completed the course!
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => stopClockGuarded(d)}
+                      className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700/90"
+                    >
+                      Stop the clock
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFinishPromptDismissed((p) => ({ ...p, [d.id]: true }))}
+                      className="rounded-md border border-emerald-700/30 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    >
+                      Keep it running
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="mt-3 flex flex-wrap gap-2">
-                {!running && !counting ? (
+                {!running && !counting && !stopped ? (
                   <>
                     <button
                       type="button"
@@ -413,21 +597,96 @@ export function RaceControlClient({
                       Gun now
                     </button>
                   </>
-                ) : (
+                ) : stopped ? (
                   <button
                     type="button"
-                    disabled={pendingGun[d.id]}
                     onClick={() => {
-                      if (window.confirm(`Re-fire the gun for ${d.label}? This resets its start time.`)) {
-                        void startRace(d.id, 0);
+                      if (window.confirm(`Resume the ${d.label} clock? It picks up from the original gun time.`)) {
+                        void setClock(d.id, "resume");
                       }
                     }}
-                    className="rounded-lg border border-[#1E3A5F]/20 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F]/60 hover:border-red-300 hover:text-red-700"
+                    className="rounded-lg border border-[#1E3A5F]/20 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F]/60 hover:border-[#E87722] hover:text-[#1E3A5F]"
                   >
-                    Re-fire gun
+                    Resume clock
                   </button>
+                ) : (
+                  <>
+                    {running ? (
+                      <button
+                        type="button"
+                        onClick={() => stopClockGuarded(d)}
+                        className="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-700/90"
+                      >
+                        Stop clock
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={pendingGun[d.id]}
+                      onClick={() => {
+                        if (window.confirm(`Re-fire the gun for ${d.label}? This resets its start time.`)) {
+                          void startRace(d.id, 0);
+                        }
+                      }}
+                      className="rounded-lg border border-[#1E3A5F]/20 px-3 py-1.5 text-xs font-semibold text-[#1E3A5F]/60 hover:border-red-300 hover:text-red-700"
+                    >
+                      Re-fire gun
+                    </button>
+                  </>
                 )}
               </div>
+
+              {/* still on course + DNF */}
+              {(running || stopped) && checkedInCount > 0 ? (
+                <div className="mt-4 border-t border-[#1E3A5F]/10 pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">
+                    Still on course ({onCourse.length} of {checkedInCount} checked in)
+                  </p>
+                  {onCourse.length === 0 ? (
+                    <p className="mt-1.5 text-sm font-medium text-emerald-700">Course is clear.</p>
+                  ) : (
+                    <ul className="mt-1.5 max-h-44 space-y-1 overflow-y-auto pr-1">
+                      {onCourse.map((e) => (
+                        <li key={e.id} className="flex items-center justify-between gap-2 text-sm text-[#1E3A5F]">
+                          <span className="min-w-0 truncate">{entryName(e)}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (window.confirm(`Mark ${entryName(e)} as DNF (did not finish)?`)) {
+                                void setDnf(e.id, "mark");
+                              }
+                            }}
+                            className="shrink-0 rounded-md border border-red-200 px-2 py-0.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                          >
+                            DNF
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {dnfList.length > 0 ? (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-red-700/70">
+                        DNF ({dnfList.length})
+                      </p>
+                      <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto pr-1">
+                        {dnfList.map((e) => (
+                          <li key={e.id} className="flex items-center justify-between gap-2 text-sm text-[#1E3A5F]/60">
+                            <span className="min-w-0 truncate line-through">{entryName(e)}</span>
+                            <button
+                              type="button"
+                              onClick={() => void setDnf(e.id, "unmark")}
+                              className="shrink-0 rounded-md border border-[#1E3A5F]/20 px-2 py-0.5 text-xs font-semibold text-[#1E3A5F]/60 hover:border-[#E87722]"
+                            >
+                              undo
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           );
         })}

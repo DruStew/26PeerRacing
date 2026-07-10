@@ -9,7 +9,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
  * Polls every 5s; also fine on a phone at home when the board is public.
  */
 
-type Distance = { id: string; label: string; published: boolean; gun_at_ms: number | null };
+type Distance = {
+  id: string;
+  label: string;
+  published: boolean;
+  gun_at_ms: number | null;
+  stopped_at_ms: number | null;
+};
 type RosterRow = { distance_id: string; name: string; bib: string | null };
 type LiveFinisher = {
   entry_id: string;
@@ -314,7 +320,7 @@ function DistanceBoard({
   official,
   divisionFilter,
 }: {
-  distance: { id: string; label: string; published: boolean; gun_at_ms: number | null };
+  distance: Distance;
   serverNow: number;
   roster: { name: string; bib: string | null }[];
   live: LiveFinisher[];
@@ -322,6 +328,7 @@ function DistanceBoard({
   divisionFilter: string | null;
 }) {
   const running = distance.gun_at_ms !== null && distance.gun_at_ms <= serverNow;
+  const stopped = running && distance.stopped_at_ms !== null;
 
   return (
     <section className="px-8 py-6">
@@ -332,7 +339,14 @@ function DistanceBoard({
         </h2>
         {running && !distance.published ? (
           <span className="font-mono text-4xl font-black tabular-nums text-white/85">
-            {fmtClock(serverNow - (distance.gun_at_ms as number))}
+            {stopped
+              ? fmtClock(Math.max(0, (distance.stopped_at_ms as number) - (distance.gun_at_ms as number)))
+              : fmtClock(serverNow - (distance.gun_at_ms as number))}
+            {stopped ? (
+              <span className="ml-3 align-middle text-lg font-bold uppercase tracking-widest text-emerald-400">
+                Final
+              </span>
+            ) : null}
           </span>
         ) : null}
       </div>

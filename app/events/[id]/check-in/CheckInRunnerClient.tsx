@@ -226,6 +226,8 @@ export function CheckInRunnerClient({
   /** Entry currently scanning a timing tag sticker; bound tags per entry (session display). */
   const [tagScanEntryId, setTagScanEntryId] = useState<string | null>(null);
   const [boundTags, setBoundTags] = useState<Record<string, number>>({});
+  /** Scanner has a tag locked on screen that hasn't been attached yet (guards closing). */
+  const [tagScanLocked, setTagScanLocked] = useState(false);
   /** Bib from search row if profile/entries haven’t loaded pr_id yet (same DB, kiosk display). */
   const [kioskBibFallback, setKioskBibFallback] = useState<string | null>(null);
 
@@ -500,6 +502,17 @@ export function CheckInRunnerClient({
   }
 
   const closeRunnerModal = useCallback(() => {
+    if (tagScanEntryId && tagScanLocked) {
+      if (
+        !window.confirm(
+          "A scanned timing tag has NOT been attached to this runner yet. Close anyway without attaching it?",
+        )
+      ) {
+        return;
+      }
+    }
+    setTagScanEntryId(null);
+    setTagScanLocked(false);
     setRunnerModalOpen(false);
     setRunner(null);
     setSelectedUserId(null);
@@ -517,7 +530,7 @@ export function CheckInRunnerClient({
       requestAnimationFrame(() => searchInputRef.current?.focus());
     }
     onRunnerClosed?.();
-  }, [variant, onRunnerClosed]);
+  }, [variant, onRunnerClosed, tagScanEntryId, tagScanLocked]);
 
   const dismissWalkUpSuccess = useCallback(() => {
     setWalkUpSuccessNotice(null);
@@ -1178,8 +1191,13 @@ export function CheckInRunnerClient({
                       onBound={(tagId) => {
                         setBoundTags((prev) => ({ ...prev, [e.id]: tagId }));
                         setTagScanEntryId(null);
+                        setTagScanLocked(false);
                       }}
-                      onClose={() => setTagScanEntryId(null)}
+                      onClose={() => {
+                        setTagScanEntryId(null);
+                        setTagScanLocked(false);
+                      }}
+                      onLockChange={setTagScanLocked}
                     />
                   ) : null}
                   {variant === "promoter" ? (
