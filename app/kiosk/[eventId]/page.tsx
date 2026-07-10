@@ -11,10 +11,10 @@ export default async function KioskEventPage({
   searchParams,
 }: {
   params: Promise<{ eventId: string }>;
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; code?: string }>;
 }) {
   const { eventId } = await params;
-  const { next } = await searchParams;
+  const { next, code } = await searchParams;
 
   const supabase = await createServerSupabaseClient();
   const { data: event, error } = await supabase
@@ -43,7 +43,7 @@ export default async function KioskEventPage({
         Enter the <strong>6-digit kiosk code</strong> from your race director to open the check-in desk on this
         tablet.
       </p>
-      <KioskLoginClient eventId={eventId} next={next ?? null} />
+      <KioskLoginClient eventId={eventId} next={next ?? null} initialCode={code ?? null} />
     </KioskShell>
   );
 }

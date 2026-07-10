@@ -1,5 +1,6 @@
 "use client";
 
+import QRCode from "qrcode";
 import { useCallback, useEffect, useState } from "react";
 
 type TerminalRow = {
@@ -41,6 +42,104 @@ function hotspotDevBaseUrl(primaryBase: string): string {
   }
 }
 
+/**
+ * One shareable race-day link: URL carries the kiosk code (?code=) and the
+ * destination (?next=), so the recipient just opens it and taps Continue.
+ * Share sheet on mobile, copy everywhere, QR for handing to a device in
+ * person. Codes rotate daily and can be regenerated, same as before.
+ */
+function ShareLinkRow({
+  title,
+  desc,
+  url,
+  shareText,
+}: {
+  title: string;
+  desc: string;
+  url: string;
+  shareText: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  async function share() {
+    try {
+      await navigator.share({ title, text: shareText, url });
+    } catch {
+      // user canceled — nothing to do
+    }
+  }
+
+  function copy() {
+    void navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  async function toggleQr() {
+    if (!qrOpen && !qrDataUrl) {
+      try {
+        setQrDataUrl(await QRCode.toDataURL(url, { width: 480, margin: 1 }));
+      } catch {
+        return;
+      }
+    }
+    setQrOpen((o) => !o);
+  }
+
+  return (
+    <div className="rounded-lg border border-[#1E3A5F]/12 bg-white/80 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#1E3A5F]">{title}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-[#1E3A5F]/60">{desc}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {canShare ? (
+            <button
+              type="button"
+              onClick={() => void share()}
+              className="rounded-md bg-[#E87722] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#E87722]/90"
+            >
+              Share
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={copy}
+            className={
+              canShare
+                ? "rounded-md border border-[#1E3A5F]/25 px-3.5 py-2 text-sm font-semibold text-[#1E3A5F] hover:border-[#E87722]"
+                : "rounded-md bg-[#E87722] px-3.5 py-2 text-sm font-semibold text-white hover:bg-[#E87722]/90"
+            }
+          >
+            {copied ? "Copied!" : "Copy link"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleQr()}
+            className="rounded-md border border-[#1E3A5F]/25 px-3.5 py-2 text-sm font-semibold text-[#1E3A5F] hover:border-[#E87722]"
+          >
+            {qrOpen ? "Hide QR" : "QR"}
+          </button>
+        </div>
+      </div>
+      {qrOpen && qrDataUrl ? (
+        <div className="mt-3 flex flex-col items-center gap-1 rounded-lg bg-white p-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={qrDataUrl} alt={`QR code for ${title}`} className="h-56 w-56" />
+          <p className="text-center text-xs text-[#1E3A5F]/60">
+            Scan with the device&apos;s camera — code is pre-filled, just tap Continue.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PromoterKioskClient({
   eventId,
   baseUrl,
@@ -54,7 +153,6 @@ export function PromoterKioskClient({
   const primaryBase = shareBaseUrls[0] ?? baseUrl;
   const [data, setData] = useState<Payload | null>(null);
   const [regenPending, setRegenPending] = useState(false);
-  const [copyDone, setCopyDone] = useState(false);
   const [troubleshootOpen, setTroubleshootOpen] = useState(false);
 
   const primaryKioskUrl = buildKioskTabletUrl(primaryBase, eventId);
@@ -117,35 +215,40 @@ export function PromoterKioskClient({
           </div>
         </div>
 
-        <div className="mt-6 rounded-lg border border-[#1E3A5F]/12 bg-white/80 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">Kiosk Link for Tablets</p>
-          <p className="mt-1 text-xs leading-relaxed text-[#1E3A5F]/65">
-            Share this URL on race-day devices on the <strong>same Wi‑Fi</strong> (not cellular). Use{" "}
-            <strong>http</strong> and include <strong>:3000</strong> while developing locally.
+        <div className="mt-6">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">
+            Share Race-Day Links
           </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <code className="block min-w-0 flex-1 break-all rounded border border-[#1E3A5F]/15 bg-[#fafbfc] px-3 py-2 font-mono text-xs text-[#1E3A5F]">
-              {primaryKioskUrl}
-            </code>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(primaryKioskUrl).then(() => {
-                  setCopyDone(true);
-                  window.setTimeout(() => setCopyDone(false), 2000);
-                });
-              }}
-              className="shrink-0 rounded-md bg-[#E87722] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#E87722]/90"
-            >
-              {copyDone ? "Copied!" : "Copy link"}
-            </button>
+          <p className="mt-1 text-xs leading-relaxed text-[#1E3A5F]/65">
+            Each link carries today&apos;s kiosk code — the person just opens it and taps Continue.
+            Text it, share it, or have them scan the QR. Regenerating codes kills old links.
+          </p>
+          <div className="mt-3 space-y-3">
+            <ShareLinkRow
+              title="Check-In Desk"
+              desc="Tablets and phones working the check-in table."
+              url={`${primaryKioskUrl}?code=${data.kioskCode ?? ""}`}
+              shareText={`${data.eventName ?? "Race"} — check-in desk. Open this link and tap Continue.`}
+            />
+            <ShareLinkRow
+              title="Finish Cam"
+              desc="The phone on the tripod at the finish line."
+              url={`${primaryKioskUrl}?code=${data.kioskCode ?? ""}&next=${encodeURIComponent(`/events/${eventId}/finish-cam`)}`}
+              shareText={`${data.eventName ?? "Race"} — finish camera. Open this link on the tripod phone and tap Continue.`}
+            />
+            <ShareLinkRow
+              title="Race Control"
+              desc="The finish-line laptop: guns, MARK, confirm times."
+              url={`${primaryKioskUrl}?code=${data.kioskCode ?? ""}&next=${encodeURIComponent(`/events/${eventId}/race-control`)}`}
+              shareText={`${data.eventName ?? "Race"} — race control. Open this link on the laptop and tap Continue.`}
+            />
           </div>
           <button
             type="button"
             onClick={() => setTroubleshootOpen(true)}
             className="mt-3 text-xs font-semibold text-[#E87722] underline-offset-2 hover:underline"
           >
-            If slave devices can&apos;t connect
+            If race-day devices can&apos;t connect
           </button>
         </div>
 

@@ -3,9 +3,18 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function KioskLoginClient({ eventId, next }: { eventId: string; next?: string | null }) {
+export function KioskLoginClient({
+  eventId,
+  next,
+  initialCode,
+}: {
+  eventId: string;
+  next?: string | null;
+  /** Pre-filled from a shared link (?code=) — recipient just taps Continue. */
+  initialCode?: string | null;
+}) {
   const router = useRouter();
-  const [digits, setDigits] = useState("");
+  const [digits, setDigits] = useState(() => (initialCode ?? "").replace(/\D/g, "").slice(0, 6));
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
