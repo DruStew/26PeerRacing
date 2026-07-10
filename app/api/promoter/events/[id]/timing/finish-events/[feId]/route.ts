@@ -92,12 +92,24 @@ export async function PATCH(
     }
     const distanceId = (entry as { distance_id: string }).distance_id;
 
-    const { data: gun } = await service
-      .from("timing_gun_marks")
-      .select("gun_at")
-      .eq("session_id", row.session_id)
-      .eq("distance_id", distanceId)
-      .maybeSingle();
+    // The gun is a race-level fact: the laptop (Race Control) and the phone
+    // (Finish Cam) each run their own session, so look across every session
+    // of this event and take the latest gun for the runner's distance.
+    const { data: sessionRows } = await service
+      .from("timing_sessions")
+      .select("id")
+      .eq("event_id", eventId);
+    const sessionIds = ((sessionRows ?? []) as { id: string }[]).map((s) => s.id);
+    const { data: gun } = sessionIds.length
+      ? await service
+          .from("timing_gun_marks")
+          .select("gun_at")
+          .in("session_id", sessionIds)
+          .eq("distance_id", distanceId)
+          .order("gun_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
     if (!gun) {
       return NextResponse.json(
         { ok: false, error: "No gun mark for this runner's distance — fire the GUN mark first (you can set it retroactively on the capture page)." },

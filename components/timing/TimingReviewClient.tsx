@@ -164,9 +164,16 @@ export function TimingReviewClient({
     return m;
   }, [tagBindings, entryById]);
 
-  const gunBySessionDistance = useMemo(() => {
+  // The gun is race-level: it may have been fired from another session
+  // (Race Control laptop vs Finish Cam phone), so take the latest per
+  // distance across all sessions.
+  const latestGunByDistance = useMemo(() => {
     const m = new Map<string, number>();
-    for (const g of gunMarks) m.set(`${g.session_id}:${g.distance_id}`, new Date(g.gun_at).getTime());
+    for (const g of gunMarks) {
+      const t = new Date(g.gun_at).getTime();
+      const prev = m.get(g.distance_id);
+      if (prev === undefined || t > prev) m.set(g.distance_id, t);
+    }
     return m;
   }, [gunMarks]);
 
@@ -194,8 +201,8 @@ export function TimingReviewClient({
 
   function elapsedPreview(f: FinishEvent): { ms: number | null; missingGun: boolean } {
     const entry = resolvedEntryFor(f);
-    if (!entry || !sessionId) return { ms: null, missingGun: false };
-    const gun = gunBySessionDistance.get(`${sessionId}:${entry.distance_id}`);
+    if (!entry) return { ms: null, missingGun: false };
+    const gun = latestGunByDistance.get(entry.distance_id);
     if (gun === undefined) return { ms: null, missingGun: true };
     const ms = new Date(f.crossed_at).getTime() - gun;
     return { ms: ms > 0 ? ms : null, missingGun: false };
