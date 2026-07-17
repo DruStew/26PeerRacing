@@ -181,7 +181,7 @@ export function ResultsConsoleClient({
     maxPercentile,
   ]);
 
-  async function publish(action: "publish" | "unpublish", forceUnpublish = false) {
+  async function publish(action: "publish" | "unpublish", forceUnpublish = false, forcePrizeRepublish = false) {
     setPublishing(true);
     setPublishError(null);
     setPublishNotice(null);
@@ -195,6 +195,7 @@ export function ResultsConsoleClient({
           min_percentile: minPercentile,
           max_percentile: maxPercentile,
           ...(forceUnpublish ? { force_unpublish: true } : {}),
+          ...(forcePrizeRepublish ? { force_prize_republish: true } : {}),
         }),
       });
       const json = (await res.json()) as {
@@ -215,6 +216,7 @@ export function ResultsConsoleClient({
           racersPaid?: number;
           walletCreditedCents?: number;
           promoterCreditedCents?: number;
+          prizeAwardsWritten?: number;
         };
       };
       if (!res.ok || !json.ok) {
@@ -227,6 +229,13 @@ export function ResultsConsoleClient({
             })
             .join(" · ");
           setPublishError(`${json.error ?? "Cannot unpublish."} ${detail}`);
+        } else if (
+          json.code === "completed_prizes_changed" &&
+          window.confirm(
+            `${json.error ?? "Completed prize records would change."}\n\nContinue only if you have verified the physical prizes already issued.`,
+          )
+        ) {
+          await publish(action, forceUnpublish, true);
         } else {
           setPublishError(json.error ?? `Error ${res.status}`);
         }
@@ -245,9 +254,13 @@ export function ResultsConsoleClient({
           s && (s.promoterCreditedCents ?? 0) > 0
             ? ` ${fmtUsd(s.promoterCreditedCents ?? 0)} in event earnings credited to your wallet.`
             : "";
+        const prizeNote =
+          s && (s.prizeAwardsWritten ?? 0) > 0
+            ? ` ${s.prizeAwardsWritten} physical prize${s.prizeAwardsWritten === 1 ? "" : "s"} assigned.`
+            : "";
         setPublishNotice(
           s
-            ? `Published — ${s.resultsWritten} results written, ${s.badgesAwarded} badges awarded.${walletNote}${promoterNote}`
+            ? `Published — ${s.resultsWritten} results written, ${s.badgesAwarded} badges awarded.${walletNote}${promoterNote}${prizeNote}`
             : "Published.",
         );
       } else {
@@ -613,7 +626,7 @@ export function ResultsConsoleClient({
                 </p>
                 <p className="mt-1 max-w-xl text-xs text-[#1E3A5F]/65">
                   {canRunAlgorithm
-                    ? "Publishing recomputes divisions and payouts on the server from the live finish times and your saved payout settings, writes the official results, and awards badges to each racer's trophy case."
+                    ? "Publishing recomputes divisions, cash payouts, and physical prize assignments on the server, writes the official results, and awards badges to each racer's trophy case."
                     : "Publish unlocks once at least one finisher has a time for this distance."}
                 </p>
                 {resultsPublishedAt ? (
@@ -642,7 +655,7 @@ export function ResultsConsoleClient({
                       window.confirm(
                         resultsPublishedAt
                           ? "Re-publish results for this distance? The current live results will be replaced."
-                          : "Publish results for this distance? Racers will see their division, place, payout, and badge.",
+                          : "Publish results for this distance? Racers will see their division, place, cash payout, prizes, and badge.",
                       )
                     ) {
                       void publish("publish");

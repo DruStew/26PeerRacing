@@ -5,6 +5,7 @@ import { computeConsoleResults } from "@/lib/results-console/compute";
 import { loadFinishersForDistance, type FinisherRow } from "@/lib/results-console/finishers";
 import { DEMO_PUBLISH_BLOCKED, loadEventIsDemo } from "@/lib/demo/event";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
+import { rulesForPlacement, type PrizeRule, type PrizeSettings } from "@/lib/prizes/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
 import {
@@ -26,6 +27,40 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const WRITE_CHUNK = 200;
+const COMPLETED_PRIZE_STATUSES = new Set(["picked_up", "shipped", "delivered"]);
+
+type PrizeDraft = {
+  entryId: string | null;
+  category: "main" | "female" | "military";
+  division: string;
+  place: number;
+  awardOrder: number;
+  prizeName: string;
+  costCents: number;
+  retailValueCents: number;
+};
+
+function prizeSignature(value: {
+  entryId: string | null;
+  category: string;
+  division: string;
+  place: number;
+  awardOrder: number;
+  prizeName: string;
+  costCents: number;
+  retailValueCents: number;
+}) {
+  return [
+    value.entryId ?? "",
+    value.category,
+    value.division,
+    value.place,
+    value.awardOrder,
+    value.prizeName,
+    value.costCents,
+    value.retailValueCents,
+  ].join("\u001f");
+}
 
 async function gate(eventId: string, supabase: SupabaseClient) {
   const { data: userData } = await supabase.auth.getUser();
@@ -97,6 +132,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     min_percentile?: number;
     max_percentile?: number;
     force_unpublish?: boolean;
+    force_prize_republish?: boolean;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -135,6 +171,31 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
           },
           { status: 409 },
         );
+      }
+    }
+    if (body.force_prize_republish !== true) {
+      const { data: prizeAwards } = await service
+        .from("published_prize_awards")
+        .select("id")
+        .eq("distance_id", distanceId);
+      const prizeAwardIds = (prizeAwards ?? []).map((award) => (award as { id: string }).id);
+      if (prizeAwardIds.length > 0) {
+        const { count: completedAwardsAffected } = await service
+          .from("prize_award_fulfillment")
+          .select("award_id", { count: "exact", head: true })
+          .in("award_id", prizeAwardIds)
+          .in("status", [...COMPLETED_PRIZE_STATUSES]);
+        if ((completedAwardsAffected ?? 0) > 0) {
+          return NextResponse.json(
+            {
+              ok: false,
+              code: "completed_prizes_changed",
+              completedAwardsAffected,
+              error: `${completedAwardsAffected} completed prize award${completedAwardsAffected === 1 ? "" : "s"} would be removed from the fulfillment log. Confirm unpublish to continue.`,
+            },
+            { status: 409 },
+          );
+        }
       }
     }
 
@@ -185,6 +246,21 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     .eq("distance_id", distanceId)
     .maybeSingle();
 
+  const { data: prizeSettingsRaw } = await service
+    .from("distance_prize_settings")
+    .select("*")
+    .eq("distance_id", distanceId)
+    .maybeSingle();
+  const prizeSettings = (prizeSettingsRaw as PrizeSettings | null) ?? null;
+  const { data: prizeRulesRaw } = prizeSettings
+    ? await service
+        .from("distance_prize_rules")
+        .select("id,category,division,place,sort_order,prize_name,cost_cents,retail_value_cents")
+        .eq("distance_id", distanceId)
+        .eq("config_id", prizeSettings.current_config_id)
+    : { data: [] };
+  const prizeRules = (prizeRulesRaw ?? []) as PrizeRule[];
+
   const { count: registeredEntryCount } = await service
     .from("entries")
     .select("id", { count: "exact", head: true })
@@ -199,6 +275,10 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     registeredEntryCount: registeredEntryCount ?? null,
     minPercentile,
     maxPercentile,
+    prizeCategories: {
+      female: prizeSettings?.female_prizes_enabled === true,
+      military: prizeSettings?.military_prizes_enabled === true,
+    },
   });
   if ("error" in comp) {
     return NextResponse.json({ ok: false, error: comp.error }, { status: 400 });
@@ -263,6 +343,129 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     return row;
   });
 
+  const prizeDrafts: PrizeDraft[] = [];
+  const addPrizeDrafts = (
+    e: (typeof comp.entries)[number],
+    category: "main" | "female" | "military",
+    placing: { division: string; place: number } | undefined,
+  ) => {
+    if (!placing) return;
+    const f = finisherByAlgoId.get(e.id);
+    const awards = rulesForPlacement(prizeRules, category, placing.division, placing.place);
+    awards.forEach((award, awardOrder) => {
+      prizeDrafts.push({
+        entryId: f?.entryId ?? null,
+        category,
+        division: placing.division,
+        place: placing.place,
+        awardOrder,
+        prizeName: award.prize_name,
+        costCents: award.cost_cents,
+        retailValueCents: award.retail_value_cents,
+      });
+    });
+  };
+  for (const e of comp.entries) {
+    if (prizeSettings?.main_prizes_enabled) addPrizeDrafts(e, "main", mainPlacing.get(e.id));
+    comp.incentives.forEach((pool, index) => {
+      if (pool.key === "female" && prizeSettings?.female_prizes_enabled) {
+        addPrizeDrafts(e, "female", incentivePlacing[index].get(e.id));
+      }
+      if (pool.key === "military" && prizeSettings?.military_prizes_enabled) {
+        addPrizeDrafts(e, "military", incentivePlacing[index].get(e.id));
+      }
+    });
+  }
+
+  // Preserve pickup/delivery status when an identical award survives a re-publish.
+  // If a completed award would disappear or change, require an explicit confirmation.
+  const { data: oldAwardsRaw } = await service
+    .from("published_prize_awards")
+    .select("id,result_id,category,division,place,award_order,prize_name,retail_value_cents")
+    .eq("distance_id", distanceId);
+  const oldAwards = (oldAwardsRaw ?? []) as Array<{
+    id: string;
+    result_id: string;
+    category: string;
+    division: string;
+    place: number;
+    award_order: number;
+    prize_name: string;
+    retail_value_cents: number;
+  }>;
+  const oldResultIds = [...new Set(oldAwards.map((award) => award.result_id))];
+  const { data: oldResultsRaw } =
+    oldResultIds.length > 0
+      ? await service.from("results").select("id,entry_id").in("id", oldResultIds)
+      : { data: [] };
+  const oldEntryByResultId = new Map(
+    ((oldResultsRaw ?? []) as Array<{ id: string; entry_id: string | null }>).map((row) => [row.id, row.entry_id]),
+  );
+  const oldAwardIds = oldAwards.map((award) => award.id);
+  const { data: oldFulfillmentRaw } =
+    oldAwardIds.length > 0
+      ? await service
+          .from("prize_award_fulfillment")
+          .select("award_id,cost_cents,status,fulfilled_at,fulfilled_by,note")
+          .in("award_id", oldAwardIds)
+      : { data: [] };
+  const oldFulfillment = (oldFulfillmentRaw ?? []) as Array<{
+    award_id: string;
+    cost_cents: number;
+    status: string;
+    fulfilled_at: string | null;
+    fulfilled_by: string | null;
+    note: string | null;
+  }>;
+  const fulfillmentByAward = new Map(oldFulfillment.map((row) => [row.award_id, row]));
+  const oldBySignature = new Map<string, (typeof oldFulfillment)[number]>();
+  for (const award of oldAwards) {
+    const fulfillment = fulfillmentByAward.get(award.id);
+    if (!fulfillment) continue;
+    oldBySignature.set(
+      prizeSignature({
+        entryId: oldEntryByResultId.get(award.result_id) ?? null,
+        category: award.category,
+        division: award.division,
+        place: award.place,
+        awardOrder: award.award_order,
+        prizeName: award.prize_name,
+        costCents: fulfillment.cost_cents,
+        retailValueCents: award.retail_value_cents,
+      }),
+      fulfillment,
+    );
+  }
+  const nextSignatures = new Set(
+    prizeDrafts.map((draft) =>
+      prizeSignature({
+        entryId: draft.entryId,
+        category: draft.category,
+        division: draft.division,
+        place: draft.place,
+        awardOrder: draft.awardOrder,
+        prizeName: draft.prizeName,
+        costCents: draft.costCents,
+        retailValueCents: draft.retailValueCents,
+      }),
+    ),
+  );
+  const completedAwardsAffected = [...oldBySignature.entries()].filter(
+    ([signature, fulfillment]) =>
+      COMPLETED_PRIZE_STATUSES.has(fulfillment.status) && !nextSignatures.has(signature),
+  ).length;
+  if (completedAwardsAffected > 0 && body.force_prize_republish !== true) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "completed_prizes_changed",
+        completedAwardsAffected,
+        error: `${completedAwardsAffected} completed prize award${completedAwardsAffected === 1 ? "" : "s"} would change. Confirm the re-publish to continue.`,
+      },
+      { status: 409 },
+    );
+  }
+
   // Republish = wipe and rewrite (badges cascade via result_id, strays cleared explicitly).
   const { error: badgeDelErr } = await service
     .from("badges")
@@ -289,6 +492,93 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     for (const r of (inserted ?? []) as Array<{ id: string; entry_id: string | null }>) {
       if (r.entry_id) resultIdByEntryId.set(r.entry_id, r.id);
     }
+  }
+
+  let prizeAwardsWritten = 0;
+  let prizeCostCents = 0;
+  let prizeRetailValueCents = 0;
+  const publicAwardRows = prizeDrafts.flatMap((draft) => {
+    const resultId = draft.entryId ? resultIdByEntryId.get(draft.entryId) : null;
+    if (!resultId) return [];
+    prizeCostCents += draft.costCents;
+    prizeRetailValueCents += draft.retailValueCents;
+    return [{
+      result_id: resultId,
+      event_id: eventId,
+      distance_id: distanceId,
+      category: draft.category,
+      division: draft.division,
+      place: draft.place,
+      award_order: draft.awardOrder,
+      prize_name: draft.prizeName,
+      retail_value_cents: draft.retailValueCents,
+      show_retail_value: prizeSettings?.show_individual_retail_values === true,
+      show_total_award_value: prizeSettings?.show_total_award_value !== false,
+      published_at: publishedAt,
+      _entry_id: draft.entryId,
+      _cost_cents: draft.costCents,
+    }];
+  });
+  for (let i = 0; i < publicAwardRows.length; i += WRITE_CHUNK) {
+    const chunk = publicAwardRows.slice(i, i + WRITE_CHUNK);
+    const { data: insertedAwards, error: awardError } = await service
+      .from("published_prize_awards")
+      .insert(chunk.map(({ _cost_cents: costCents, _entry_id: entryId, ...row }) => {
+        void costCents;
+        void entryId;
+        return row;
+      }))
+      .select("id,result_id,category,division,place,award_order,prize_name,retail_value_cents");
+    if (awardError) return NextResponse.json({ ok: false, error: `Prize awards: ${awardError.message}` }, { status: 500 });
+    const fulfillmentRows = ((insertedAwards ?? []) as Array<{
+      id: string;
+      result_id: string;
+      category: string;
+      division: string;
+      place: number;
+      award_order: number;
+      prize_name: string;
+      retail_value_cents: number;
+    }>).map((award) => {
+      const source = chunk.find(
+        (candidate) =>
+          candidate.result_id === award.result_id &&
+          candidate.category === award.category &&
+          candidate.division === award.division &&
+          candidate.place === award.place &&
+          candidate.award_order === award.award_order &&
+          candidate.prize_name === award.prize_name,
+      );
+      const costCents = source?._cost_cents ?? 0;
+      const previous = oldBySignature.get(
+        prizeSignature({
+          entryId: source?._entry_id ?? null,
+          category: award.category,
+          division: award.division,
+          place: award.place,
+          awardOrder: award.award_order,
+          prizeName: award.prize_name,
+          costCents,
+          retailValueCents: award.retail_value_cents,
+        }),
+      );
+      return {
+        award_id: award.id,
+        cost_cents: costCents,
+        status: previous?.status ?? "awaiting_pickup",
+        fulfilled_at: previous?.fulfilled_at ?? null,
+        fulfilled_by: previous?.fulfilled_by ?? null,
+        note: previous?.note ?? null,
+        updated_at: publishedAt,
+      };
+    });
+    if (fulfillmentRows.length > 0) {
+      const { error: fulfillmentError } = await service.from("prize_award_fulfillment").insert(fulfillmentRows);
+      if (fulfillmentError) {
+        return NextResponse.json({ ok: false, error: `Prize fulfillment: ${fulfillmentError.message}` }, { status: 500 });
+      }
+    }
+    prizeAwardsWritten += fulfillmentRows.length;
   }
 
   // Badges: division badge for every finisher with an account; incentive badges for paid places.
@@ -409,6 +699,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       racers_pot_cents: comp.racersPotCents,
       total_runner_payout_cents: totalRunnerPayoutCents,
       checks_paid_count: checksPaidCount,
+      prize_cost_cents: prizeCostCents,
+      prize_retail_value_cents: prizeRetailValueCents,
+      prize_award_count: prizeAwardsWritten,
     },
     { onConflict: "distance_id" },
   );
@@ -449,6 +742,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       racersPaid: credited.racersPaid,
       walletCreditedCents: credited.totalCents,
       promoterCreditedCents,
+      prizeAwardsWritten,
+      prizeCostCents,
+      prizeRetailValueCents,
     },
   });
 }

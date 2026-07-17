@@ -157,6 +157,8 @@ export type PayoutCalculationResult = {
 /** Saved producer payout inputs for one distance (race). */
 export type DistancePayoutSettingsRow = {
   distance_id: string;
+  /** False for prize-only races; divisions still run but no cash reaches racer wallets. */
+  cash_payouts_enabled: boolean;
   processing_fee_fraction: number;
   shootout_fraction: number;
   pr_holding_fraction: number;

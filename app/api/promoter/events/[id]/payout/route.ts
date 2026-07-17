@@ -191,6 +191,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
   }
 
   const defaults = defaultDistancePayoutSettings(distanceId);
+  const cash_payouts_enabled = body.cash_payouts_enabled !== false;
 
   const processing_fee_fraction = fractionFromPercentOrFraction(
     body,
@@ -284,6 +285,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
 
   const row: Omit<DistancePayoutSettingsRow, "updated_at"> = {
     ...defaults,
+    cash_payouts_enabled,
     processing_fee_fraction,
     shootout_fraction,
     pr_holding_fraction,

@@ -72,6 +72,12 @@ export default async function AdminFinancePage() {
             ytd={formatUsdFromCents(ytd.promoterEarningsCents)}
             hint="Producer cut credited to promoter wallets on publish"
           />
+          <StatCard
+            label="Physical prizes awarded"
+            lifetime={lifetime.prizeAwardCount.toLocaleString()}
+            ytd={ytd.prizeAwardCount.toLocaleString()}
+            hint={`${formatUsdFromCents(lifetime.prizeCostCents)} lifetime company cost`}
+          />
         </div>
       </section>
 
@@ -94,6 +100,9 @@ export default async function AdminFinancePage() {
                 ["Shootout fund held", lifetime.shootoutFundCents, ytd.shootoutFundCents, true],
                 ["PR holding", lifetime.prHoldingCents, ytd.prHoldingCents, true],
                 ["Paid to runners", lifetime.runnerPayoutCents, ytd.runnerPayoutCents, true],
+                ["Physical prize cost", lifetime.prizeCostCents, ytd.prizeCostCents, true],
+                ["Physical prize retail value", lifetime.prizeRetailValueCents, ytd.prizeRetailValueCents, true],
+                ["Physical prizes awarded", lifetime.prizeAwardCount, ytd.prizeAwardCount, false],
                 ["Promoter earnings", lifetime.promoterEarningsCents, ytd.promoterEarningsCents, true],
                 ["Peer Racing org share", lifetime.peerRacingOrgCents, ytd.peerRacingOrgCents, true],
               ].map(([label, life, year, isMoney]) => (
@@ -130,6 +139,7 @@ export default async function AdminFinancePage() {
                   <th className="px-4 py-3 font-semibold">Published</th>
                   <th className="px-4 py-3 font-semibold text-right">Checks</th>
                   <th className="px-4 py-3 font-semibold text-right">Runners</th>
+                  <th className="px-4 py-3 font-semibold text-right">Prize cost</th>
                   <th className="px-4 py-3 font-semibold text-right">Promoter</th>
                   <th className="px-4 py-3 font-semibold text-right">PR org</th>
                   <th className="px-4 py-3 font-semibold text-right">Gross pot</th>
@@ -151,6 +161,9 @@ export default async function AdminFinancePage() {
                     <td className="px-4 py-3 text-right tabular-nums">{row.checksPaid}</td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {formatUsdFromCents(row.runnerPayoutCents)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatUsdFromCents(row.prizeCostCents)}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {formatUsdFromCents(row.producerCents)}

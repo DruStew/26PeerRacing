@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { EventNav } from "@/components/promoter/EventNav";
 import { EventPayoutClient } from "@/components/promoter/EventPayoutClient";
+import { EventPrizeAwardsClient } from "@/components/promoter/EventPrizeAwardsClient";
 import { LandingNavbar } from "@/components/landing/LandingNavbar";
 import { canManageEvent } from "@/lib/promoter/event-access";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -81,6 +82,9 @@ export default async function EventPayoutPage({ params }: { params: Promise<{ id
 
         <div className="mt-10">
           <EventPayoutClient eventId={id} distances={distances} />
+        </div>
+        <div className="mt-10">
+          <EventPrizeAwardsClient eventId={id} distances={distances} />
         </div>
       </main>
     </div>

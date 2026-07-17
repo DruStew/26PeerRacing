@@ -25,6 +25,17 @@ export type PublicFinisher = {
   militaryIncentiveDivision: string | null;
   militaryIncentivePlace: number | null;
   militaryIncentivePayoutCents: number;
+  prizes: PublicPrizeAward[];
+};
+
+export type PublicPrizeAward = {
+  id: string;
+  category: "main" | "female" | "military";
+  division: string;
+  place: number;
+  name: string;
+  retailValueCents: number;
+  showRetailValue: boolean;
 };
 
 export type PublicDivision = {
@@ -56,6 +67,9 @@ export type PublicResults = {
   totalFinishers: number;
   totalPayoutCents: number;
   checksPaid: number;
+  prizeAwardCount: number;
+  totalPrizeRetailValueCents: number;
+  showTotalAwardValue: boolean;
   minHours: number;
   maxHours: number;
 };
@@ -100,6 +114,7 @@ function toFinisher(row: ResultRow): PublicFinisher {
     militaryIncentiveDivision: row.military_incentive_division,
     militaryIncentivePlace: row.military_incentive_place,
     militaryIncentivePayoutCents: row.military_incentive_payout_cents ?? 0,
+    prizes: [],
   };
 }
 
@@ -148,6 +163,40 @@ export async function loadPublicResults(
   if (rows.length === 0) return null;
 
   const finishers = rows.map(toFinisher);
+  const resultIds = finishers.map((finisher) => finisher.id);
+  const { data: prizeData } =
+    resultIds.length > 0
+      ? await supabase
+          .from("published_prize_awards")
+          .select("id,result_id,category,division,place,award_order,prize_name,retail_value_cents,show_retail_value,show_total_award_value")
+          .in("result_id", resultIds)
+          .order("category")
+          .order("place")
+          .order("award_order")
+      : { data: [] };
+  const prizeRows = (prizeData ?? []) as Array<{
+    id: string;
+    result_id: string;
+    category: "main" | "female" | "military";
+    division: string;
+    place: number;
+    prize_name: string;
+    retail_value_cents: number;
+    show_retail_value: boolean;
+    show_total_award_value: boolean;
+  }>;
+  const finisherById = new Map(finishers.map((finisher) => [finisher.id, finisher]));
+  for (const prize of prizeRows) {
+    finisherById.get(prize.result_id)?.prizes.push({
+      id: prize.id,
+      category: prize.category,
+      division: prize.division,
+      place: prize.place,
+      name: prize.prize_name,
+      retailValueCents: prize.retail_value_cents,
+      showRetailValue: prize.show_retail_value,
+    });
+  }
 
   // Main divisions, ordered by the fastest band first.
   const byDivision = new Map<string, PublicFinisher[]>();
@@ -234,6 +283,9 @@ export async function loadPublicResults(
     totalFinishers: finishers.length,
     totalPayoutCents,
     checksPaid,
+    prizeAwardCount: prizeRows.length,
+    totalPrizeRetailValueCents: prizeRows.reduce((sum, prize) => sum + prize.retail_value_cents, 0),
+    showTotalAwardValue: prizeRows.some((prize) => prize.show_total_award_value),
     minHours,
     maxHours,
   };

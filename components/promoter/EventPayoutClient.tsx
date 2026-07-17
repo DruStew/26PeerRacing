@@ -80,6 +80,7 @@ function bracketOptionLabel(b: PayoutBracketId): string {
 type DistanceOption = { id: string; label: string; entry_fee_cents: number };
 
 type FormState = {
+  cashPayoutsEnabled: boolean;
   entryCount: number;
   entryFeeCents: number;
   processingFeePercent: number;
@@ -113,6 +114,7 @@ function rowToForm(
         const divisionCount = Math.min(MAX_DIVISIONS, Math.max(1, row.division_count));
         const eliteDivisionIndex = Math.min(divisionCount - 1, Math.max(0, row.elite_division_index));
         return {
+          cashPayoutsEnabled: row.cash_payouts_enabled !== false,
           entryCount: row.entry_count_override ?? liveEntryCount,
           entryFeeCents: row.entry_fee_cents_override ?? liveFeeCents,
           processingFeePercent: Number(row.processing_fee_fraction) * 100,
@@ -142,6 +144,7 @@ function rowToForm(
         };
       })()
     : {
+        cashPayoutsEnabled: true,
         entryCount: liveEntryCount,
         entryFeeCents: liveFeeCents,
         processingFeePercent: d.processing_fee_fraction * 100,
@@ -175,10 +178,10 @@ function formToInput(
     entryFeeCents: f.entryFeeCents,
     processingFeeFraction: f.processingFeePercent / 100,
     shootoutFraction: f.shootoutPercent / 100,
-    prHoldingFraction: f.prHoldingPercent / 100,
+    prHoldingFraction: f.cashPayoutsEnabled ? f.prHoldingPercent / 100 : 1,
     producerFractionOfPrHolding: f.producerShareOfPrPercent / 100,
-    trueAddedMoneyCents: f.trueAddedMoneyCents,
-    femaleIncentiveFromRacersPotCents: f.femaleIncentiveCents,
+    trueAddedMoneyCents: f.cashPayoutsEnabled ? f.trueAddedMoneyCents : 0,
+    femaleIncentiveFromRacersPotCents: f.cashPayoutsEnabled ? f.femaleIncentiveCents : 0,
     femaleIncentiveDivisionCount: f.femaleIncentiveDivisionCount,
     femaleIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
     femaleIncentiveDivisionLabels: divisionLabelsForCount(f.femaleIncentiveDivisionCount),
@@ -186,7 +189,7 @@ function formToInput(
     femaleIncentiveManualBracket:
       f.femaleIncentiveScheduleMode === "manual" ? f.femaleIncentiveManualBracket : undefined,
     femaleIncentiveBracketEntryCount: Math.max(0, incentiveBandCounts.femaleEntryCount),
-    militaryIncentiveFromRacersPotCents: f.militaryIncentiveCents,
+    militaryIncentiveFromRacersPotCents: f.cashPayoutsEnabled ? f.militaryIncentiveCents : 0,
     militaryIncentiveDivisionCount: f.militaryIncentiveDivisionCount,
     militaryIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
     militaryIncentiveDivisionLabels: divisionLabelsForCount(f.militaryIncentiveDivisionCount),
@@ -194,7 +197,7 @@ function formToInput(
     militaryIncentiveManualBracket:
       f.militaryIncentiveScheduleMode === "manual" ? f.militaryIncentiveManualBracket : undefined,
     militaryIncentiveBracketEntryCount: Math.max(0, incentiveBandCounts.militaryEntryCount),
-    eliteDivisionCarveFromPoolCents: f.eliteDivisionCarveCents,
+    eliteDivisionCarveFromPoolCents: f.cashPayoutsEnabled ? f.eliteDivisionCarveCents : 0,
     divisionCount: f.divisionCount,
     eliteDivisionIndex: f.eliteDivisionIndex,
     scheduleMode: f.scheduleMode,
@@ -445,7 +448,7 @@ export function EventPayoutClient({
 
   const autoScheduleColumn = useMemo(
     () => (form ? entryCountToBracket(form.entryCount) : "<10"),
-    [form?.entryCount],
+    [form],
   );
 
   /**
@@ -484,6 +487,7 @@ export function EventPayoutClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           distance_id: selectedDistanceId,
+          cash_payouts_enabled: form.cashPayoutsEnabled,
           processing_fee_percent: form.processingFeePercent,
           shootout_percent: form.shootoutPercent,
           pr_holding_percent: form.prHoldingPercent,
@@ -679,6 +683,37 @@ export function EventPayoutClient({
         </section>
 
         <section className="rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
+          <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Cash Awards</h2>
+          <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-[#1E3A5F]/15 bg-[#fafbfc] p-4">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-[#E87722]"
+              checked={form.cashPayoutsEnabled}
+              onChange={(e) =>
+                setForm((f) => (f ? { ...f, cashPayoutsEnabled: e.target.checked } : f))
+              }
+            />
+            <span>
+              <span className="block text-sm font-semibold text-[#1E3A5F]">Pay cash awards for this distance</span>
+              <span className="mt-1 block text-xs leading-relaxed text-[#1E3A5F]/65">
+                Turn this off for a prize-only race. Divisions and placements still publish, but racers receive no wallet
+                credit. Net entry revenue follows the PR holding and producer split.
+              </span>
+            </span>
+          </label>
+          {!form.cashPayoutsEnabled ? (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+              Prize-only mode is active. Cash incentive amounts, true added money, and the elite cash carve are ignored
+              until cash awards are turned back on.
+            </p>
+          ) : null}
+        </section>
+
+        <section
+          className={`rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm ${
+            form.cashPayoutsEnabled ? "" : "opacity-60"
+          }`}
+        >
           <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Fees & Splits</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <PercentField

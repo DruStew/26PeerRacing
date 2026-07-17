@@ -62,6 +62,12 @@ export default async function RacerResultDetailPage({
     });
   }
   const totalWon = moneyLines.reduce((s, m) => s + m.cents, 0);
+  const prizeLines = r.prizes.map((prize) => ({
+    ...prize,
+    display: `${prize.name}${
+      prize.showRetailValue && prize.retailValueCents > 0 ? ` (${formatUsd(prize.retailValueCents)} value)` : ""
+    }`,
+  }));
 
   // Share graphic inputs
   const [{ data: profile }, sponsorLogoUrl] = await Promise.all([
@@ -131,10 +137,15 @@ export default async function RacerResultDetailPage({
             r.militaryIncentivePayoutCents > 0 ? ` · ${formatUsd(r.militaryIncentivePayoutCents)}` : ""
           }`
         : null,
-    moneyLines:
-      r.payoutCents > 0 && r.division
+    moneyLines: [
+      ...(r.payoutCents > 0 && r.division
         ? [{ label: `${r.division.toUpperCase()} DIVISION`, amountText: formatUsd(r.payoutCents) }]
-        : [],
+        : []),
+      ...prizeLines.map((prize) => ({
+        label: `${prize.category.toUpperCase()} PRIZE`,
+        amountText: prize.display,
+      })),
+    ],
     totalWonText: totalWon > 0 ? formatUsd(totalWon) : null,
     sponsorLogoUrl,
   };
@@ -183,6 +194,14 @@ export default async function RacerResultDetailPage({
               <p className="font-display text-4xl font-bold text-[#1E3A5F]">{formatUsd(totalWon)}</p>
             </div>
           ) : null}
+          {prizeLines.length > 0 ? (
+            <div className="mt-4 rounded-xl border-2 border-[#E87722]/30 bg-[#fff8f3] px-6 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#E87722]">Physical prizes</p>
+              <p className="font-display mt-1 text-xl font-bold text-[#1E3A5F]">
+                {prizeLines.map((prize) => prize.display).join(" + ")}
+              </p>
+            </div>
+          ) : null}
         </section>
 
         {/* stat tiles */}
@@ -218,9 +237,9 @@ export default async function RacerResultDetailPage({
         </section>
 
         {/* money breakdown */}
-        {moneyLines.length > 0 ? (
+        {moneyLines.length > 0 || prizeLines.length > 0 ? (
           <section className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 shadow-sm">
-            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Payout Breakdown</h2>
+            <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Award Breakdown</h2>
             <dl className="mt-3 space-y-2 text-sm">
               {moneyLines.map((m) => (
                 <div key={m.label} className="flex items-center justify-between gap-4">
@@ -228,16 +247,20 @@ export default async function RacerResultDetailPage({
                   <dd className="font-semibold tabular-nums text-[#1E3A5F]">{formatUsd(m.cents)}</dd>
                 </div>
               ))}
-              <div className="flex items-center justify-between gap-4 border-t border-[#1E3A5F]/10 pt-2">
-                <dt className="font-semibold text-[#1E3A5F]">Total</dt>
-                <dd className="font-display text-lg font-bold tabular-nums text-[#E87722]">
-                  {formatUsd(totalWon)}
-                </dd>
-              </div>
+              {prizeLines.map((prize) => (
+                <div key={prize.id} className="flex items-center justify-between gap-4">
+                  <dt className="text-[#1E3A5F]/75">{prize.category === "main" ? "Division prize" : `${prize.category} incentive prize`}</dt>
+                  <dd className="font-semibold text-right text-[#E87722]">{prize.display}</dd>
+                </div>
+              ))}
+              {totalWon > 0 ? (
+                <div className="flex items-center justify-between gap-4 border-t border-[#1E3A5F]/10 pt-2">
+                  <dt className="font-semibold text-[#1E3A5F]">Cash total</dt>
+                  <dd className="font-display text-lg font-bold tabular-nums text-[#E87722]">{formatUsd(totalWon)}</dd>
+                </div>
+              ) : null}
             </dl>
-            <p className="mt-3 text-xs text-[#1E3A5F]/55">
-              Winnings are credited to your Peer Racing wallet.
-            </p>
+            {totalWon > 0 ? <p className="mt-3 text-xs text-[#1E3A5F]/55">Cash winnings are credited to your Peer Racing wallet.</p> : null}
           </section>
         ) : (
           <section className="mt-6 rounded-xl border border-[#1E3A5F]/10 bg-white p-6 text-center shadow-sm">

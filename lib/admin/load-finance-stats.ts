@@ -5,6 +5,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type FinancePeriodStats = {
   checksPaid: number;
   runnerPayoutCents: number;
+  prizeCostCents: number;
+  prizeRetailValueCents: number;
+  prizeAwardCount: number;
   promoterEarningsCents: number;
   peerRacingOrgCents: number;
   grossPotCents: number;
@@ -23,6 +26,9 @@ export type FinanceDashboardStats = {
     publishedAt: string;
     checksPaid: number;
     runnerPayoutCents: number;
+    prizeCostCents: number;
+    prizeRetailValueCents: number;
+    prizeAwardCount: number;
     producerCents: number;
     peerRacingOrgCents: number;
     grossPotCents: number;
@@ -43,12 +49,18 @@ type SnapshotRow = {
   racers_pot_cents: number;
   total_runner_payout_cents: number;
   checks_paid_count: number;
+  prize_cost_cents: number;
+  prize_retail_value_cents: number;
+  prize_award_count: number;
 };
 
 function emptyPeriod(): FinancePeriodStats {
   return {
     checksPaid: 0,
     runnerPayoutCents: 0,
+    prizeCostCents: 0,
+    prizeRetailValueCents: 0,
+    prizeAwardCount: 0,
     promoterEarningsCents: 0,
     peerRacingOrgCents: 0,
     grossPotCents: 0,
@@ -62,6 +74,9 @@ function emptyPeriod(): FinancePeriodStats {
 function addSnapshot(target: FinancePeriodStats, row: SnapshotRow) {
   target.checksPaid += row.checks_paid_count;
   target.runnerPayoutCents += Number(row.total_runner_payout_cents);
+  target.prizeCostCents += Number(row.prize_cost_cents ?? 0);
+  target.prizeRetailValueCents += Number(row.prize_retail_value_cents ?? 0);
+  target.prizeAwardCount += Number(row.prize_award_count ?? 0);
   target.promoterEarningsCents += Number(row.producer_cents);
   target.peerRacingOrgCents += Number(row.peer_racing_org_cents);
   target.grossPotCents += Number(row.gross_pot_cents);
@@ -120,6 +135,9 @@ export async function loadFinanceDashboardStats(
     publishedAt: row.published_at,
     checksPaid: row.checks_paid_count,
     runnerPayoutCents: Number(row.total_runner_payout_cents),
+    prizeCostCents: Number(row.prize_cost_cents ?? 0),
+    prizeRetailValueCents: Number(row.prize_retail_value_cents ?? 0),
+    prizeAwardCount: Number(row.prize_award_count ?? 0),
     producerCents: Number(row.producer_cents),
     peerRacingOrgCents: Number(row.peer_racing_org_cents),
     grossPotCents: Number(row.gross_pot_cents),

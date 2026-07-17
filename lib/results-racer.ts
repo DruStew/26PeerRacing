@@ -30,6 +30,15 @@ export type RacerResult = {
   militaryIncentivePlace: number | null;
   militaryIncentivePayoutCents: number;
   publishedAt: string | null;
+  prizes: RacerPrizeAward[];
+};
+
+export type RacerPrizeAward = {
+  id: string;
+  category: "main" | "female" | "military";
+  name: string;
+  retailValueCents: number;
+  showRetailValue: boolean;
 };
 
 export type RacerBadge = {
@@ -92,6 +101,7 @@ function toRacerResult(
     militaryIncentivePlace: row.military_incentive_place,
     militaryIncentivePayoutCents: row.military_incentive_payout_cents ?? 0,
     publishedAt: row.published_at,
+    prizes: [],
   };
 }
 
@@ -108,9 +118,15 @@ async function decorateWithMeta(
   const eventIds = [...new Set(rows.map((r) => r.event_id))];
   const distanceIds = [...new Set(rows.map((r) => r.distance_id))];
 
-  const [eventsRes, distancesRes] = await Promise.all([
+  const resultIds = rows.map((row) => row.id);
+  const [eventsRes, distancesRes, prizesRes] = await Promise.all([
     service.from("events").select("id,name,race_date,city,state").in("id", eventIds),
     service.from("distances").select("id,label").in("id", distanceIds),
+    service
+      .from("published_prize_awards")
+      .select("id,result_id,category,prize_name,retail_value_cents,show_retail_value,award_order")
+      .in("result_id", resultIds)
+      .order("award_order"),
   ]);
 
   const eventById = new Map(
@@ -123,9 +139,27 @@ async function decorateWithMeta(
     ]),
   );
 
-  return rows.map((r) =>
+  const decorated = rows.map((r) =>
     toRacerResult(r, eventById.get(r.event_id), distLabelById.get(r.distance_id) ?? "Race"),
   );
+  const resultById = new Map(decorated.map((result) => [result.id, result]));
+  for (const prize of (prizesRes.data ?? []) as Array<{
+    id: string;
+    result_id: string;
+    category: "main" | "female" | "military";
+    prize_name: string;
+    retail_value_cents: number;
+    show_retail_value: boolean;
+  }>) {
+    resultById.get(prize.result_id)?.prizes.push({
+      id: prize.id,
+      category: prize.category,
+      name: prize.prize_name,
+      retailValueCents: prize.retail_value_cents,
+      showRetailValue: prize.show_retail_value,
+    });
+  }
+  return decorated;
 }
 
 /** All of a racer's published results, newest race first. */

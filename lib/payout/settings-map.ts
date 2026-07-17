@@ -19,12 +19,14 @@ export function payoutSettingsToCalculationInput(
     entryFeeCents: row.entry_fee_cents_override ?? live.entryFeeCents,
     processingFeeFraction: Number(row.processing_fee_fraction),
     shootoutFraction: Number(row.shootout_fraction ?? 0),
-    prHoldingFraction: Number(row.pr_holding_fraction),
+    prHoldingFraction: row.cash_payouts_enabled === false ? 1 : Number(row.pr_holding_fraction),
     producerFractionOfPrHolding: Number(row.producer_fraction_of_pr_holding),
-    trueAddedMoneyCents: row.true_added_money_cents,
-    femaleIncentiveFromRacersPotCents: Math.max(0, Math.round(Number(row.female_incentive_cents ?? 0))),
-    militaryIncentiveFromRacersPotCents: Math.max(0, Math.round(Number(row.military_incentive_cents ?? 0))),
-    eliteDivisionCarveFromPoolCents: row.elite_division_carve_cents,
+    trueAddedMoneyCents: row.cash_payouts_enabled === false ? 0 : row.true_added_money_cents,
+    femaleIncentiveFromRacersPotCents:
+      row.cash_payouts_enabled === false ? 0 : Math.max(0, Math.round(Number(row.female_incentive_cents ?? 0))),
+    militaryIncentiveFromRacersPotCents:
+      row.cash_payouts_enabled === false ? 0 : Math.max(0, Math.round(Number(row.military_incentive_cents ?? 0))),
+    eliteDivisionCarveFromPoolCents: row.cash_payouts_enabled === false ? 0 : row.elite_division_carve_cents,
     divisionCount: row.division_count,
     eliteDivisionIndex: row.elite_division_index,
     scheduleMode: row.schedule_mode,
@@ -64,6 +66,7 @@ export function payoutSettingsToCalculationInput(
 export function defaultDistancePayoutSettings(distanceId: string): Omit<DistancePayoutSettingsRow, "updated_at"> {
   return {
     distance_id: distanceId,
+    cash_payouts_enabled: true,
     processing_fee_fraction: 0.04,
     shootout_fraction: 0,
     pr_holding_fraction: 0.5,
