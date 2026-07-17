@@ -363,10 +363,15 @@ export default async function EventsPage({
                                   const prizeNames = awards
                                     ? [...new Set(awards.prizes.map((prize) => prize.name))]
                                     : [];
+                                  const sharedMainPrizeLines = awards
+                                    ? awards.prizes
+                                        .filter((prize) => prize.category === "main" && prize.division == null)
+                                        .sort((a, b) => a.place - b.place)
+                                    : [];
                                   return (
                                     <div
                                       key={d.id}
-                                      className="shrink-0 rounded-lg border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-2 text-xs text-[#1E3A5F]/90 sm:text-sm"
+                                      className="w-80 shrink-0 rounded-lg border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-2 text-xs text-[#1E3A5F]/90 sm:text-sm"
                                     >
                                       <div className="flex items-center gap-1.5">
                                         <span className="font-medium">
@@ -383,15 +388,25 @@ export default async function EventsPage({
                                         ) : null}
                                       </div>
                                       {awards ? (
-                                        <p className="mt-1 max-w-64 text-[11px] font-semibold leading-snug text-[#E87722] sm:text-xs">
+                                        <p className="mt-1 text-[11px] font-semibold leading-snug text-[#E87722] sm:text-xs">
                                           {awards.cashMode
                                             ? `${awards.cashMode === "guaranteed" ? "Guaranteed" : "Estimated"} ${compactUsd(awards.cashHeadlineCents)} cash`
                                             : null}
-                                          {awards.cashMode && awards.prizes.length > 0 ? " + " : null}
-                                          {awards.prizes.length > 0
-                                            ? `prizes${awards.prizeMaxPlace > 0 ? ` through ${ordinal(awards.prizeMaxPlace)}` : ""}`
-                                            : null}
+                                          {awards.cashMode && awards.prizes.length > 0 ? " + division prizes" : null}
+                                          {!awards.cashMode && awards.prizes.length > 0 ? "Division prizes" : null}
                                         </p>
+                                      ) : null}
+                                      {awards && awards.mainPrizeDivisionCount > 0 ? (
+                                        <>
+                                          <p className="mt-1 text-[11px] font-semibold leading-snug text-[#1E3A5F] sm:text-xs">
+                                            {awards.mainPrizeDivisionCount} pace-based divisions · Prizes through{" "}
+                                            {ordinal(awards.mainPrizeMaxPlace)} in every division
+                                          </p>
+                                          <p className="mt-0.5 text-[10px] leading-snug text-[#1E3A5F]/65">
+                                            {awards.mainPrizeWinningPlaces} prize-winning finishes across the field—not
+                                            just the fastest runners.
+                                          </p>
+                                        </>
                                       ) : null}
                                       {awards?.cashMode === "entry_based" ? (
                                         <p className="mt-0.5 max-w-64 text-[10px] leading-snug text-[#1E3A5F]/55">
@@ -400,8 +415,15 @@ export default async function EventsPage({
                                           paid racers.
                                         </p>
                                       ) : null}
-                                      {prizeNames.length > 0 ? (
-                                        <p className="mt-0.5 max-w-64 text-[10px] leading-snug text-[#1E3A5F]/65">
+                                      {sharedMainPrizeLines.length > 0 ? (
+                                        <p className="mt-1 text-[10px] leading-snug text-[#1E3A5F]/65">
+                                          Each division:{" "}
+                                          {sharedMainPrizeLines
+                                            .map((prize) => `${ordinal(prize.place)} ${prize.name}`)
+                                            .join(" · ")}
+                                        </p>
+                                      ) : prizeNames.length > 0 ? (
+                                        <p className="mt-0.5 text-[10px] leading-snug text-[#1E3A5F]/65">
                                           Prize line: {prizeNames.slice(0, 3).join(" · ")}
                                           {prizeNames.length > 3 ? ` · +${prizeNames.length - 3} more` : ""}
                                         </p>

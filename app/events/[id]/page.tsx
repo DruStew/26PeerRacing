@@ -661,6 +661,13 @@ export default async function EventPage({
                         {awards.prizes.length > 0 ? (
                           <div className={awards.cashMode ? "mt-4 border-t border-[#E87722]/20 pt-4" : ""}>
                             <p className="text-xs font-semibold uppercase tracking-wide text-[#E87722]">Prize line</p>
+                            {awards.mainPrizeDivisionCount > 0 ? (
+                              <p className="mt-1 text-sm font-semibold text-[#1E3A5F]">
+                                {awards.mainPrizeDivisionCount} pace-based divisions · Prizes through{" "}
+                                {ordinal(awards.mainPrizeMaxPlace)} in every division ·{" "}
+                                {awards.mainPrizeWinningPlaces} prize-winning finishes across the field
+                              </p>
+                            ) : null}
                             <ul className="mt-1 space-y-1 text-xs text-[#1E3A5F]/80">
                               {awards.prizes.map((prize, index) => (
                                 <li key={`${prize.category}-${prize.division}-${prize.place}-${prize.name}-${index}`}>

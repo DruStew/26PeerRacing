@@ -5,7 +5,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { calculateEventPayout } from "@/lib/payout/calculate";
 import { payoutSettingsToCalculationInput } from "@/lib/payout/settings-map";
 import type { DistancePayoutSettingsRow } from "@/lib/payout/types";
-import type { PrizeCategory, PrizeRule, PrizeSettings } from "@/lib/prizes/types";
+import {
+  rulesForPlacement,
+  type PrizeCategory,
+  type PrizeRule,
+  type PrizeSettings,
+} from "@/lib/prizes/types";
 
 export type PublicCashPlace = { place: number; amountCents: number };
 export type PublicCashDivision = { label: string; places: PublicCashPlace[] };
@@ -30,6 +35,9 @@ export type PublicAwardMarketing = {
   cashPools: PublicCashPool[];
   prizes: PublicPrizeLine[];
   prizeMaxPlace: number;
+  mainPrizeMaxPlace: number;
+  mainPrizeDivisionCount: number;
+  mainPrizeWinningPlaces: number;
 };
 
 function publicDivisions(
@@ -154,6 +162,29 @@ export async function loadPublicAwardMarketing(
             showRetailValue: prizeSettings?.show_individual_retail_values === true,
           }))
       : [];
+    const configuredMainDivisions = Math.min(
+      5,
+      Math.max(1, Math.floor(Number(payoutSettings?.division_count ?? 1))),
+    );
+    let mainPrizeMaxPlace = 0;
+    let mainPrizeDivisionCount = 0;
+    let mainPrizeWinningPlaces = 0;
+    if (showPrizes && prizeSettings?.main_prizes_enabled) {
+      const divisionLabels = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"].slice(
+        0,
+        configuredMainDivisions,
+      );
+      for (const division of divisionLabels) {
+        let divisionHasPrize = false;
+        for (let place = 1; place <= 12; place++) {
+          if (rulesForPlacement(rulesByDistance.get(distanceId) ?? [], "main", division, place).length === 0) continue;
+          divisionHasPrize = true;
+          mainPrizeWinningPlaces += 1;
+          mainPrizeMaxPlace = Math.max(mainPrizeMaxPlace, place);
+        }
+        if (divisionHasPrize) mainPrizeDivisionCount += 1;
+      }
+    }
 
     if (!showCash && prizes.length === 0) continue;
     output.set(distanceId, {
@@ -166,6 +197,9 @@ export async function loadPublicAwardMarketing(
       cashPools,
       prizes,
       prizeMaxPlace: prizes.reduce((max, prize) => Math.max(max, prize.place), 0),
+      mainPrizeMaxPlace,
+      mainPrizeDivisionCount,
+      mainPrizeWinningPlaces,
     });
   }
   return output;
