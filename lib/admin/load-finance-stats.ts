@@ -8,6 +8,7 @@ export type FinancePeriodStats = {
   prizeCostCents: number;
   prizeRetailValueCents: number;
   prizeAwardCount: number;
+  companyFundedCashShortfallCents: number;
   promoterEarningsCents: number;
   peerRacingOrgCents: number;
   grossPotCents: number;
@@ -29,6 +30,7 @@ export type FinanceDashboardStats = {
     prizeCostCents: number;
     prizeRetailValueCents: number;
     prizeAwardCount: number;
+    companyFundedCashShortfallCents: number;
     producerCents: number;
     peerRacingOrgCents: number;
     grossPotCents: number;
@@ -52,6 +54,7 @@ type SnapshotRow = {
   prize_cost_cents: number;
   prize_retail_value_cents: number;
   prize_award_count: number;
+  company_funded_cash_shortfall_cents: number;
 };
 
 function emptyPeriod(): FinancePeriodStats {
@@ -61,6 +64,7 @@ function emptyPeriod(): FinancePeriodStats {
     prizeCostCents: 0,
     prizeRetailValueCents: 0,
     prizeAwardCount: 0,
+    companyFundedCashShortfallCents: 0,
     promoterEarningsCents: 0,
     peerRacingOrgCents: 0,
     grossPotCents: 0,
@@ -77,6 +81,7 @@ function addSnapshot(target: FinancePeriodStats, row: SnapshotRow) {
   target.prizeCostCents += Number(row.prize_cost_cents ?? 0);
   target.prizeRetailValueCents += Number(row.prize_retail_value_cents ?? 0);
   target.prizeAwardCount += Number(row.prize_award_count ?? 0);
+  target.companyFundedCashShortfallCents += Number(row.company_funded_cash_shortfall_cents ?? 0);
   target.promoterEarningsCents += Number(row.producer_cents);
   target.peerRacingOrgCents += Number(row.peer_racing_org_cents);
   target.grossPotCents += Number(row.gross_pot_cents);
@@ -138,6 +143,7 @@ export async function loadFinanceDashboardStats(
     prizeCostCents: Number(row.prize_cost_cents ?? 0),
     prizeRetailValueCents: Number(row.prize_retail_value_cents ?? 0),
     prizeAwardCount: Number(row.prize_award_count ?? 0),
+    companyFundedCashShortfallCents: Number(row.company_funded_cash_shortfall_cents ?? 0),
     producerCents: Number(row.producer_cents),
     peerRacingOrgCents: Number(row.peer_racing_org_cents),
     grossPotCents: Number(row.gross_pot_cents),

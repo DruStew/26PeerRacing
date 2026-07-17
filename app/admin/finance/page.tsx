@@ -101,6 +101,7 @@ export default async function AdminFinancePage() {
                 ["PR holding", lifetime.prHoldingCents, ytd.prHoldingCents, true],
                 ["Paid to runners", lifetime.runnerPayoutCents, ytd.runnerPayoutCents, true],
                 ["Physical prize cost", lifetime.prizeCostCents, ytd.prizeCostCents, true],
+                ["Guaranteed cash shortfall", lifetime.companyFundedCashShortfallCents, ytd.companyFundedCashShortfallCents, true],
                 ["Physical prize retail value", lifetime.prizeRetailValueCents, ytd.prizeRetailValueCents, true],
                 ["Physical prizes awarded", lifetime.prizeAwardCount, ytd.prizeAwardCount, false],
                 ["Promoter earnings", lifetime.promoterEarningsCents, ytd.promoterEarningsCents, true],

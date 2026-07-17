@@ -57,6 +57,7 @@ export function ResultsConsoleClient({
 
   const [realFinishers, setRealFinishers] = useState<RealFinisher[]>([]);
   const [registeredEntryCount, setRegisteredEntryCount] = useState(0);
+  const [checkedInEntryCount, setCheckedInEntryCount] = useState(0);
   const [importedRowCount, setImportedRowCount] = useState(0);
   const [resultsPublishedAt, setResultsPublishedAt] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
@@ -93,6 +94,7 @@ export function ResultsConsoleClient({
         suggestedEntryCount?: number;
         suggestedFeeCents?: number;
         distance?: { label: string };
+        checkedInPaidCount?: number;
       };
       if (!payoutRes.ok || !payoutJson.ok) {
         setLoadError(payoutJson.error ?? "Could not load payout settings");
@@ -100,6 +102,7 @@ export function ResultsConsoleClient({
       }
       setSettings(payoutJson.settings ?? null);
       setLiveFeeCents(payoutJson.suggestedFeeCents ?? 0);
+      setCheckedInEntryCount(payoutJson.checkedInPaidCount ?? 0);
       if (payoutJson.distance?.label) setSelectedLabel(payoutJson.distance.label);
 
       const dataJson = (await dataRes.json()) as {
@@ -165,7 +168,7 @@ export function ResultsConsoleClient({
       settings,
       distanceId: selectedDistanceId,
       liveFeeCents,
-      registeredEntryCount,
+      registeredEntryCount: checkedInEntryCount,
       minPercentile,
       maxPercentile,
     });
@@ -176,7 +179,7 @@ export function ResultsConsoleClient({
     settings,
     selectedDistanceId,
     liveFeeCents,
-    registeredEntryCount,
+    checkedInEntryCount,
     minPercentile,
     maxPercentile,
   ]);

@@ -129,6 +129,9 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
   }
 
   const updatedAt = new Date().toISOString();
+  const publicAwardsDisplay = ["none", "cash", "prizes", "both"].includes(String(body.public_awards_display))
+    ? String(body.public_awards_display)
+    : "none";
   const settingsRow = {
     distance_id: distanceId,
     current_config_id: configId,
@@ -137,6 +140,7 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     military_prizes_enabled: body.military_prizes_enabled === true,
     show_individual_retail_values: body.show_individual_retail_values === true,
     show_total_award_value: body.show_total_award_value !== false,
+    public_awards_display: publicAwardsDisplay,
     updated_at: updatedAt,
   };
   const { data: settings, error: settingsError } = await supabase

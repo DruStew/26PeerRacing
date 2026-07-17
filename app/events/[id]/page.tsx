@@ -26,6 +26,10 @@ import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { parseRaceDayLinksJson } from "@/lib/race-day-links";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
+import {
+  loadPublicAwardMarketing,
+  type PublicAwardMarketing,
+} from "@/lib/awards/public-marketing";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +48,19 @@ function formatDateTime(value: string | null): string {
 
 function formatEntryFee(cents: number): string {
   return cents === 0 ? "$0" : `$${(cents / 100).toFixed(2)}`;
+}
+
+function formatAwardMoney(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  return `${n}${n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th"}`;
 }
 
 export async function generateMetadata({
@@ -214,6 +231,10 @@ export default async function EventPage({
   })();
 
   const distanceIds = distanceRows.map((d) => d.id);
+  const awardsService = createServiceRoleSupabaseClient();
+  const awardMarketing = awardsService
+    ? await loadPublicAwardMarketing(awardsService, distanceIds)
+    : new Map<string, PublicAwardMarketing>();
   const aidStationsByDistance = new Map<string, Array<{
     id: string;
     name: string;
@@ -469,6 +490,7 @@ export default async function EventPage({
                 const publishedAt =
                   (d as { results_published_at?: string | null }).results_published_at ?? null;
                 const resultsPublished = Boolean(publishedAt);
+                const awards = awardMarketing.get(d.id);
                 const course =
                   ((d as { course_geojson?: CourseGeoJSON | null }).course_geojson ?? null) as
                     | CourseGeoJSON
@@ -594,6 +616,76 @@ export default async function EventPage({
                         </p>
                       )}
                     </div>
+                    {awards && !resultsPublished ? (
+                      <div className="mt-4 rounded-lg border border-[#E87722]/25 bg-[#fff8f3] p-4">
+                        {awards.cashMode ? (
+                          <>
+                            <p className="font-display text-lg font-bold text-[#1E3A5F]">
+                              {awards.cashMode === "guaranteed"
+                                ? `${formatAwardMoney(awards.cashHeadlineCents)} guaranteed cash payout`
+                                : `Estimated ${formatAwardMoney(awards.cashHeadlineCents)} cash payout`}
+                            </p>
+                            {awards.cashMode === "entry_based" ? (
+                              <p className="mt-1 text-xs leading-relaxed text-[#1E3A5F]/70">
+                                Example payout structure based on {awards.modeledEntryCount ?? 0} entries at{" "}
+                                {formatAwardMoney(awards.modeledEntryFeeCents ?? 0)}. Final cash payouts are determined by
+                                final checked-in, paid racers and may differ.
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-xs text-[#1E3A5F]/70">
+                                The main cash purse is guaranteed. Female and military cash incentives shown below are
+                                additional.
+                              </p>
+                            )}
+                            <div className="mt-3 space-y-3">
+                              {awards.cashPools.map((pool) => (
+                                <div key={pool.title}>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-[#1E3A5F]/55">
+                                    {pool.title}
+                                  </p>
+                                  <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                                    {pool.divisions.map((division) => (
+                                      <p key={`${pool.title}-${division.label}`} className="text-xs text-[#1E3A5F]/80">
+                                        <span className="font-semibold">{division.label}:</span>{" "}
+                                        {division.places
+                                          .map((place) => `${ordinal(place.place)} ${formatAwardMoney(place.amountCents)}`)
+                                          .join(" · ")}
+                                      </p>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        ) : null}
+                        {awards.prizes.length > 0 ? (
+                          <div className={awards.cashMode ? "mt-4 border-t border-[#E87722]/20 pt-4" : ""}>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-[#E87722]">Prize line</p>
+                            <ul className="mt-1 space-y-1 text-xs text-[#1E3A5F]/80">
+                              {awards.prizes.map((prize, index) => (
+                                <li key={`${prize.category}-${prize.division}-${prize.place}-${prize.name}-${index}`}>
+                                  <span className="font-semibold">
+                                    {prize.category === "main"
+                                      ? prize.division
+                                        ? `${prize.division} override`
+                                        : "All divisions"
+                                      : `${prize.category === "female" ? "Female" : "Military"} incentive${
+                                          prize.division ? ` · ${prize.division} override` : ""
+                                        }`}
+                                    {" · "}
+                                    {ordinal(prize.place)}:
+                                  </span>{" "}
+                                  {prize.name}
+                                  {prize.showRetailValue && prize.retailValueCents > 0
+                                    ? ` (${formatAwardMoney(prize.retailValueCents)} value)`
+                                    : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {hasCourse || racePins.length > 0 ? (
                       <div className="mt-4">
                         <CourseMapLazy

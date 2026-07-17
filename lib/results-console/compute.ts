@@ -72,6 +72,9 @@ export interface ConsoleComputation {
   grossPotCents: number;
   processingFeeCents: number;
   racersPotCents: number;
+  cashPayoutMode: "entry_based" | "guaranteed";
+  guaranteedCashPayoutCents: number;
+  companyFundedCashShortfallCents: number;
 }
 
 export interface ComputeParams {
@@ -116,15 +119,23 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
   const smallField = finishers < MIN_FINISHERS;
   const femaleCount = rows.filter((r) => r.sex === "Female").length;
   const militaryCount = rows.filter((r) => r.military).length;
-  const feeCents = d.entry_fee_cents_override ?? liveFeeCents;
+  const feeCents = liveFeeCents;
   const divisionCount = smallField ? 1 : Math.min(5, Math.max(1, d.division_count));
   const divisionLabels = [...DIVISION_NAMES.slice(0, divisionCount)];
   const femaleIncentiveDivisionCount = smallField ? 1 : (d.female_incentive_division_count ?? 1);
   const militaryIncentiveDivisionCount = smallField ? 1 : (d.military_incentive_division_count ?? 1);
 
   const input: PayoutCalculationInput = {
-    entryCount: d.entry_count_override ?? registeredEntryCount ?? finishers,
+    cashPayoutMode:
+      d.cash_payouts_enabled === false ? "entry_based" : (d.cash_payout_mode ?? "entry_based"),
+    guaranteedCashPayoutCents:
+      d.cash_payouts_enabled === false ? 0 : (d.guaranteed_cash_payout_cents ?? 0),
+    entryCount: registeredEntryCount ?? finishers,
     entryFeeCents: feeCents,
+    scheduleBracketEntryCount:
+      d.cash_payout_mode === "guaranteed"
+        ? (d.marketing_entry_count ?? registeredEntryCount ?? finishers)
+        : undefined,
     processingFeeFraction: Number(d.processing_fee_fraction),
     shootoutFraction: Number(d.shootout_fraction ?? 0),
     prHoldingFraction: d.cash_payouts_enabled === false ? 1 : Number(d.pr_holding_fraction),
@@ -137,14 +148,16 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
     femaleIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, femaleIncentiveDivisionCount)],
     femaleIncentiveScheduleMode: d.female_incentive_schedule_mode ?? "auto",
     femaleIncentiveManualBracket: d.female_incentive_manual_bracket ?? undefined,
-    femaleIncentiveBracketEntryCount: femaleCount,
+    femaleIncentiveBracketEntryCount:
+      d.cash_payout_mode === "guaranteed" ? (d.marketing_female_entry_count ?? femaleCount) : femaleCount,
     militaryIncentiveFromRacersPotCents: d.cash_payouts_enabled === false ? 0 : (d.military_incentive_cents ?? 0),
     militaryIncentiveDivisionCount,
     militaryIncentivePlacesToPay: SCHEDULE_PLACES_TO_PAY,
     militaryIncentiveDivisionLabels: [...DIVISION_NAMES.slice(0, militaryIncentiveDivisionCount)],
     militaryIncentiveScheduleMode: d.military_incentive_schedule_mode ?? "auto",
     militaryIncentiveManualBracket: d.military_incentive_manual_bracket ?? undefined,
-    militaryIncentiveBracketEntryCount: militaryCount,
+    militaryIncentiveBracketEntryCount:
+      d.cash_payout_mode === "guaranteed" ? (d.marketing_military_entry_count ?? militaryCount) : militaryCount,
     eliteDivisionCarveFromPoolCents: d.cash_payouts_enabled === false ? 0 : d.elite_division_carve_cents,
     divisionCount,
     eliteDivisionIndex: Math.min(divisionCount - 1, Math.max(0, d.elite_division_index)),
@@ -257,6 +270,9 @@ export function computeConsoleResults(params: ComputeParams): ConsoleComputation
       grossPotCents: payout.grossPotCents,
       processingFeeCents: payout.processingFeeCents,
       racersPotCents: payout.racersPotCents,
+      cashPayoutMode: payout.cashPayoutMode,
+      guaranteedCashPayoutCents: payout.guaranteedCashPayoutCents,
+      companyFundedCashShortfallCents: payout.companyFundedCashShortfallCents,
     };
   } catch {
     return { error: "Algorithm failed on this field — try different percentile cutoffs." };

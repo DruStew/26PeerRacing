@@ -114,6 +114,9 @@ function splitIncentivePoolAcrossDivisions(
  */
 export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalculationResult {
   const warnings: string[] = [];
+  const cashPayoutMode = input.cashPayoutMode === "guaranteed" ? "guaranteed" : "entry_based";
+  const guaranteedCashPayoutCents =
+    cashPayoutMode === "guaranteed" ? Math.max(0, Math.round(input.guaranteedCashPayoutCents ?? 0)) : 0;
 
   const processingFeeFraction = clamp(input.processingFeeFraction, 0, 1);
   const shootoutFraction = clamp(input.shootoutFraction ?? 0, 0, 1);
@@ -126,7 +129,7 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
   const bracketUsed: PayoutBracketId =
     input.scheduleMode === "manual" && input.manualBracket
       ? input.manualBracket
-      : entryCountToBracket(input.entryCount);
+      : entryCountToBracket(input.scheduleBracketEntryCount ?? input.entryCount);
 
   const grossPotCents = Math.max(0, Math.round(input.entryCount * input.entryFeeCents));
   const processingFeeCents = Math.round(grossPotCents * processingFeeFraction);
@@ -136,28 +139,56 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
   const shootoutFundCents = Math.round(netAfterProcessingCents * shootoutFraction);
   const netAfterShootoutCents = netAfterProcessingCents - shootoutFundCents;
 
-  const prHoldingCents = Math.round(netAfterShootoutCents * prHoldingFraction);
-  const racersPotCents = netAfterShootoutCents - prHoldingCents;
-
   const reqFemale = Math.max(0, Math.round(input.femaleIncentiveFromRacersPotCents));
   const reqMilitary = Math.max(0, Math.round(input.militaryIncentiveFromRacersPotCents));
-  /** Funded from racers pot for incentive splits (female first, then military). */
-  const femaleAlloc = Math.min(reqFemale, racersPotCents);
-  const militaryAlloc = Math.min(reqMilitary, racersPotCents - femaleAlloc);
+  let prHoldingCents: number;
+  let racersPotCents: number;
+  let femaleAlloc: number;
+  let militaryAlloc: number;
+  let trueAdded: number;
+  let contestantPoolLedgerCents: number;
+  let contestantPoolCents: number;
+  let companyFundedCashShortfallCents = 0;
+
+  if (cashPayoutMode === "guaranteed") {
+    const totalCashCommitment = guaranteedCashPayoutCents + reqFemale + reqMilitary;
+    companyFundedCashShortfallCents = Math.max(0, totalCashCommitment - netAfterShootoutCents);
+    prHoldingCents = Math.max(0, netAfterShootoutCents - totalCashCommitment);
+    racersPotCents = Math.min(netAfterShootoutCents, totalCashCommitment);
+    femaleAlloc = reqFemale;
+    militaryAlloc = reqMilitary;
+    trueAdded = 0;
+    contestantPoolLedgerCents = guaranteedCashPayoutCents;
+    contestantPoolCents = guaranteedCashPayoutCents;
+    if (companyFundedCashShortfallCents > 0) {
+      warnings.push(
+        `Guaranteed cash commitments exceed modeled net entry revenue by $${(companyFundedCashShortfallCents / 100).toFixed(2)} — the company funds the shortfall.`,
+      );
+    }
+    if (input.trueAddedMoneyCents > 0) {
+      warnings.push("True added money is ignored in guaranteed mode because the fixed guarantee is the main cash commitment.");
+    }
+  } else {
+    prHoldingCents = Math.round(netAfterShootoutCents * prHoldingFraction);
+    racersPotCents = netAfterShootoutCents - prHoldingCents;
+    /** Funded from racers pot for incentive splits (female first, then military). */
+    femaleAlloc = Math.min(reqFemale, racersPotCents);
+    militaryAlloc = Math.min(reqMilitary, racersPotCents - femaleAlloc);
+
+    if (reqFemale + reqMilitary > racersPotCents) {
+      warnings.push(
+        "Planned female + military incentives exceed the current racers pot — splits use funded amounts only; the ledger shows the gap.",
+      );
+    }
+
+    trueAdded = Math.max(0, Math.round(input.trueAddedMoneyCents));
+    /** Ledger using planned incentive amounts (may be negative). */
+    contestantPoolLedgerCents = racersPotCents - reqFemale - reqMilitary + trueAdded;
+    /** Funded pool for main-race splits (non-negative). */
+    contestantPoolCents = racersPotCents - femaleAlloc - militaryAlloc + trueAdded;
+  }
   const femaleIncentiveCents = femaleAlloc;
   const militaryIncentiveCents = militaryAlloc;
-
-  if (reqFemale + reqMilitary > racersPotCents) {
-    warnings.push(
-      "Planned female + military incentives exceed the current racers pot — splits use funded amounts only; the ledger shows the gap.",
-    );
-  }
-
-  const trueAdded = Math.max(0, Math.round(input.trueAddedMoneyCents));
-  /** Ledger using planned incentive amounts (may be negative). */
-  const contestantPoolLedgerCents = racersPotCents - reqFemale - reqMilitary + trueAdded;
-  /** Funded pool for main-race splits (non-negative). */
-  const contestantPoolCents = racersPotCents - femaleAlloc - militaryAlloc + trueAdded;
 
   const carve = Math.max(0, Math.round(input.eliteDivisionCarveFromPoolCents));
   const poolAfterCarveLedgerCents = contestantPoolLedgerCents - carve;
@@ -282,6 +313,9 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
       : [];
 
   return {
+    cashPayoutMode,
+    guaranteedCashPayoutCents,
+    companyFundedCashShortfallCents,
     bracketUsed,
     grossPotCents,
     processingFeeCents,

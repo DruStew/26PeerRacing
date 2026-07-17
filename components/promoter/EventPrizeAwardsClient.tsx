@@ -20,6 +20,7 @@ type SettingsForm = {
   military: boolean;
   showIndividualValues: boolean;
   showTotalValue: boolean;
+  publicAwardsDisplay: "none" | "cash" | "prizes" | "both";
 };
 type FulfillmentAward = {
   id: string;
@@ -39,6 +40,7 @@ const defaultSettings: SettingsForm = {
   military: false,
   showIndividualValues: false,
   showTotalValue: true,
+  publicAwardsDisplay: "none",
 };
 
 function dollarsToCents(raw: string): number {
@@ -100,6 +102,7 @@ export function EventPrizeAwardsClient({
               military: saved.military_prizes_enabled,
               showIndividualValues: saved.show_individual_retail_values,
               showTotalValue: saved.show_total_award_value,
+              publicAwardsDisplay: saved.public_awards_display ?? "none",
             }
           : defaultSettings,
       );
@@ -224,6 +227,7 @@ export function EventPrizeAwardsClient({
           military_prizes_enabled: settings.military,
           show_individual_retail_values: settings.showIndividualValues,
           show_total_award_value: settings.showTotalValue,
+          public_awards_display: settings.publicAwardsDisplay,
           rules: cleanRules,
         }),
       });
@@ -313,6 +317,28 @@ export function EventPrizeAwardsClient({
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-medium text-[#1E3A5F] sm:col-span-2">
+              Advertise awards publicly
+              <select
+                className={`${inputClass} mt-1 max-w-md`}
+                value={settings.publicAwardsDisplay}
+                onChange={(e) =>
+                  setSettings((value) => ({
+                    ...value,
+                    publicAwardsDisplay: e.target.value as SettingsForm["publicAwardsDisplay"],
+                  }))
+                }
+              >
+                <option value="none">Do not advertise awards</option>
+                <option value="cash">Show cash only</option>
+                <option value="prizes">Show prizes only</option>
+                <option value="both">Show cash and prizes</option>
+              </select>
+              <span className="mt-1 block text-xs font-normal text-[#1E3A5F]/60">
+                Controls the Upcoming Races card and the pre-race award snapshot on the event page. Company cost is
+                always private.
+              </span>
+            </label>
             <label className="flex items-start gap-3 rounded-lg border border-[#1E3A5F]/15 p-3 text-sm">
               <input
                 type="checkbox"

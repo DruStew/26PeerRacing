@@ -7,6 +7,11 @@ import { formatDistanceDisplay } from "@/lib/distance-display";
 import { formatCalendarDate } from "@/lib/format-calendar-date";
 import { DEFAULT_PUBLIC_ROUTE } from "@/lib/routes";
 import { supabaseServer } from "@/lib/supabase/server";
+import { createServiceRoleSupabaseClient } from "@/lib/supabase/service-role";
+import {
+  loadPublicAwardMarketing,
+  type PublicAwardMarketing,
+} from "@/lib/awards/public-marketing";
 
 const PAGE_SIZE = 10;
 
@@ -31,6 +36,19 @@ function formatEntryDeadline(value: string | null): string {
 
 function racerLabel(n: number): string {
   return n === 1 ? "1 racer" : `${n} racers`;
+}
+
+function compactUsd(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function ordinal(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  return `${n}${n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th"}`;
 }
 
 function formatOpensDate(value: string | null): string {
@@ -119,6 +137,11 @@ export default async function EventsPage({
       distancesByEvent.set(d.event_id, arr);
     }
   }
+  const allDistanceIds = [...distancesByEvent.values()].flat().map((distance) => distance.id);
+  const service = createServiceRoleSupabaseClient();
+  const awardMarketing = service
+    ? await loadPublicAwardMarketing(service, allDistanceIds)
+    : new Map<string, PublicAwardMarketing>();
 
   const openEvents = allEvents.filter((e) => {
     if (finalDayIsOver(e as { race_date: string | null; end_date?: string | null })) return false;
@@ -336,26 +359,54 @@ export default async function EventsPage({
                               <div className="-mx-1 flex max-w-full gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
                                 {distances.map((d) => {
                                   const n = dCounts?.get(d.id) ?? 0;
+                                  const awards = d.results_published_at ? undefined : awardMarketing.get(d.id);
+                                  const prizeNames = awards
+                                    ? [...new Set(awards.prizes.map((prize) => prize.name))]
+                                    : [];
                                   return (
-                                    <span
+                                    <div
                                       key={d.id}
-                                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-1 text-xs text-[#1E3A5F]/90 sm:text-sm"
+                                      className="shrink-0 rounded-lg border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-2 text-xs text-[#1E3A5F]/90 sm:text-sm"
                                     >
-                                      <span className="font-medium">
-                                        {formatDistanceDisplay({
-                                          label: d.label,
-                                          race_name: d.race_name,
-                                        })}
-                                      </span>
-                                      {showEntryCounts ? (
-                                        <>
-                                          <span className="text-[#1E3A5F]/55">
-                                            ·
-                                          </span>
-                                          <span>{racerLabel(n)}</span>
-                                        </>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-medium">
+                                          {formatDistanceDisplay({
+                                            label: d.label,
+                                            race_name: d.race_name,
+                                          })}
+                                        </span>
+                                        {showEntryCounts ? (
+                                          <>
+                                            <span className="text-[#1E3A5F]/55">·</span>
+                                            <span>{racerLabel(n)}</span>
+                                          </>
+                                        ) : null}
+                                      </div>
+                                      {awards ? (
+                                        <p className="mt-1 max-w-64 text-[11px] font-semibold leading-snug text-[#E87722] sm:text-xs">
+                                          {awards.cashMode
+                                            ? `${awards.cashMode === "guaranteed" ? "Guaranteed" : "Estimated"} ${compactUsd(awards.cashHeadlineCents)} cash`
+                                            : null}
+                                          {awards.cashMode && awards.prizes.length > 0 ? " + " : null}
+                                          {awards.prizes.length > 0
+                                            ? `prizes${awards.prizeMaxPlace > 0 ? ` through ${ordinal(awards.prizeMaxPlace)}` : ""}`
+                                            : null}
+                                        </p>
                                       ) : null}
-                                    </span>
+                                      {awards?.cashMode === "entry_based" ? (
+                                        <p className="mt-0.5 max-w-64 text-[10px] leading-snug text-[#1E3A5F]/55">
+                                          Based on {awards.modeledEntryCount ?? 0} modeled entries at{" "}
+                                          {compactUsd(awards.modeledEntryFeeCents ?? 0)}. Final payout uses checked-in,
+                                          paid racers.
+                                        </p>
+                                      ) : null}
+                                      {prizeNames.length > 0 ? (
+                                        <p className="mt-0.5 max-w-64 text-[10px] leading-snug text-[#1E3A5F]/65">
+                                          Prize line: {prizeNames.slice(0, 3).join(" · ")}
+                                          {prizeNames.length > 3 ? ` · +${prizeNames.length - 3} more` : ""}
+                                        </p>
+                                      ) : null}
+                                    </div>
                                   );
                                 })}
                               </div>

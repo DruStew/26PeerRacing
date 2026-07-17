@@ -15,8 +15,10 @@ export function payoutSettingsToCalculationInput(
   const femaleSch = row.female_incentive_schedule_mode === "manual" ? "manual" : "auto";
   const militarySch = row.military_incentive_schedule_mode === "manual" ? "manual" : "auto";
   return {
-    entryCount: row.entry_count_override ?? live.entryCount,
-    entryFeeCents: row.entry_fee_cents_override ?? live.entryFeeCents,
+    cashPayoutMode: row.cash_payout_mode ?? "entry_based",
+    guaranteedCashPayoutCents: row.guaranteed_cash_payout_cents ?? 0,
+    entryCount: row.marketing_entry_count ?? row.entry_count_override ?? live.entryCount,
+    entryFeeCents: row.marketing_entry_fee_cents ?? row.entry_fee_cents_override ?? live.entryFeeCents,
     processingFeeFraction: Number(row.processing_fee_fraction),
     shootoutFraction: Number(row.shootout_fraction ?? 0),
     prHoldingFraction: row.cash_payouts_enabled === false ? 1 : Number(row.pr_holding_fraction),
@@ -54,12 +56,18 @@ export function payoutSettingsToCalculationInput(
     femaleIncentiveManualBracket: (row.female_incentive_manual_bracket ?? undefined) as
       | PayoutBracketId
       | undefined,
-    femaleIncentiveBracketEntryCount: Math.max(0, Math.floor(live.femaleEntryCount ?? 0)),
+    femaleIncentiveBracketEntryCount: Math.max(
+      0,
+      Math.floor(row.marketing_female_entry_count ?? live.femaleEntryCount ?? 0),
+    ),
     militaryIncentiveScheduleMode: militarySch,
     militaryIncentiveManualBracket: (row.military_incentive_manual_bracket ?? undefined) as
       | PayoutBracketId
       | undefined,
-    militaryIncentiveBracketEntryCount: Math.max(0, Math.floor(live.militaryEntryCount ?? 0)),
+    militaryIncentiveBracketEntryCount: Math.max(
+      0,
+      Math.floor(row.marketing_military_entry_count ?? live.militaryEntryCount ?? 0),
+    ),
   };
 }
 
@@ -67,6 +75,12 @@ export function defaultDistancePayoutSettings(distanceId: string): Omit<Distance
   return {
     distance_id: distanceId,
     cash_payouts_enabled: true,
+    cash_payout_mode: "entry_based",
+    guaranteed_cash_payout_cents: 0,
+    marketing_entry_count: null,
+    marketing_entry_fee_cents: null,
+    marketing_female_entry_count: null,
+    marketing_military_entry_count: null,
     processing_fee_fraction: 0.04,
     shootout_fraction: 0,
     pr_holding_fraction: 0.5,

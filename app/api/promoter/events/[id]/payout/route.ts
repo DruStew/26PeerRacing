@@ -98,7 +98,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   // so an embedded join silently returns nothing.
   const { data: entriesForCheckIn } = await service
     .from("entries")
-    .select("user_id,kiosk_checked_in_at,sex,active_or_retired_military")
+    .select("user_id,kiosk_checked_in_at,sex,active_or_retired_military,entry_kind,paid_at,eligible")
     .eq("event_id", eventId)
     .eq("distance_id", distanceId);
 
@@ -107,6 +107,9 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     kiosk_checked_in_at: string | null;
     sex: string | null;
     active_or_retired_military: boolean | null;
+    entry_kind: string | null;
+    paid_at: string | null;
+    eligible: boolean | null;
   }[];
   const profileIds = [...new Set(entryRows.map((e) => e.user_id).filter((u): u is string => Boolean(u)))];
   const profilesRes =
@@ -122,6 +125,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   let femaleEntryCount = 0;
   let militaryEntryCount = 0;
   let checkedInCount = 0;
+  let checkedInPaidCount = 0;
   let checkedInFemaleCount = 0;
   let checkedInMilitaryCount = 0;
   for (const r of entryRows) {
@@ -133,6 +137,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     if (isMilitary) militaryEntryCount += 1;
     if (!r.kiosk_checked_in_at) continue;
     checkedInCount += 1;
+    if (r.entry_kind === "paid" && r.paid_at && r.eligible !== false) checkedInPaidCount += 1;
     if (isFemale) checkedInFemaleCount += 1;
     if (isMilitary) checkedInMilitaryCount += 1;
   }
@@ -150,6 +155,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
     femaleEntryCount,
     militaryEntryCount,
     checkedInCount,
+    checkedInPaidCount,
     checkedInFemaleCount,
     checkedInMilitaryCount,
   });
@@ -192,6 +198,11 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
 
   const defaults = defaultDistancePayoutSettings(distanceId);
   const cash_payouts_enabled = body.cash_payouts_enabled !== false;
+  const cash_payout_mode = body.cash_payout_mode === "guaranteed" ? "guaranteed" : "entry_based";
+  const guaranteed_cash_payout_cents = Math.max(
+    0,
+    Math.round(Number(body.guaranteed_cash_payout_cents ?? 0)),
+  );
 
   const processing_fee_fraction = fractionFromPercentOrFraction(
     body,
@@ -250,14 +261,22 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     isValidBracketId(body.military_incentive_manual_bracket)
       ? body.military_incentive_manual_bracket
       : null;
-  const entry_count_override =
-    body.entry_count_override === null || body.entry_count_override === ""
+  const marketing_entry_count =
+    body.marketing_entry_count === null || body.marketing_entry_count === ""
       ? null
-      : Math.max(0, Math.floor(Number(body.entry_count_override)));
-  const entry_fee_cents_override =
-    body.entry_fee_cents_override === null || body.entry_fee_cents_override === ""
+      : Math.max(0, Math.floor(Number(body.marketing_entry_count)));
+  const marketing_entry_fee_cents =
+    body.marketing_entry_fee_cents === null || body.marketing_entry_fee_cents === ""
       ? null
-      : Math.max(0, Math.round(Number(body.entry_fee_cents_override)));
+      : Math.max(0, Math.round(Number(body.marketing_entry_fee_cents)));
+  const marketing_female_entry_count = Math.max(
+    0,
+    Math.floor(Number(body.marketing_female_entry_count ?? 0)),
+  );
+  const marketing_military_entry_count = Math.max(
+    0,
+    Math.floor(Number(body.marketing_military_entry_count ?? 0)),
+  );
 
   let division_labels: string[] | null = null;
   if (Array.isArray(body.division_labels)) {
@@ -286,6 +305,12 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
   const row: Omit<DistancePayoutSettingsRow, "updated_at"> = {
     ...defaults,
     cash_payouts_enabled,
+    cash_payout_mode,
+    guaranteed_cash_payout_cents,
+    marketing_entry_count,
+    marketing_entry_fee_cents,
+    marketing_female_entry_count,
+    marketing_military_entry_count,
     processing_fee_fraction,
     shootout_fraction,
     pr_holding_fraction,
@@ -310,8 +335,8 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
     manual_bracket: schedule_mode === "manual" ? manual_bracket : null,
     places_to_pay,
     division_labels,
-    entry_count_override,
-    entry_fee_cents_override,
+    entry_count_override: null,
+    entry_fee_cents_override: null,
   };
 
   const { data, error } = await supabase

@@ -261,18 +261,23 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     : { data: [] };
   const prizeRules = (prizeRulesRaw ?? []) as PrizeRule[];
 
-  const { count: registeredEntryCount } = await service
+  const { count: checkedInEntryCount } = await service
     .from("entries")
     .select("id", { count: "exact", head: true })
     .eq("event_id", eventId)
-    .eq("distance_id", distanceId);
+    .eq("distance_id", distanceId)
+    .eq("entry_kind", "paid")
+    .eq("eligible", true)
+    .not("paid_at", "is", null)
+    .not("kiosk_checked_in_at", "is", null);
+  const finalEligibleEntryCount = checkedInEntryCount ?? 0;
 
   const comp = computeConsoleResults({
     rows: finishers,
     settings: (settings as DistancePayoutSettingsRow | null) ?? null,
     distanceId,
     liveFeeCents: Math.max(0, (dist as { entry_fee_cents: number }).entry_fee_cents ?? 0),
-    registeredEntryCount: registeredEntryCount ?? null,
+    registeredEntryCount: finalEligibleEntryCount,
     minPercentile,
     maxPercentile,
     prizeCategories: {
@@ -702,6 +707,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       prize_cost_cents: prizeCostCents,
       prize_retail_value_cents: prizeRetailValueCents,
       prize_award_count: prizeAwardsWritten,
+      cash_payout_mode: comp.cashPayoutMode,
+      guaranteed_cash_payout_cents: comp.guaranteedCashPayoutCents,
+      company_funded_cash_shortfall_cents: comp.companyFundedCashShortfallCents,
     },
     { onConflict: "distance_id" },
   );

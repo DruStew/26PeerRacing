@@ -19,10 +19,16 @@ export type PayoutBracketId =
   | "271-300";
 
 export type PayoutCalculationInput = {
+  /** Entry-based uses the normal percentage waterfall; guaranteed fixes the main cash purse. */
+  cashPayoutMode?: "entry_based" | "guaranteed";
+  /** Fixed main-division cash purse in guaranteed mode (incentives are additional). */
+  guaranteedCashPayoutCents?: number;
   /** Paid entries counted toward the pot (manual or from reporting later). */
   entryCount: number;
   /** Weighted-average or primary distance entry fee in cents. */
   entryFeeCents: number;
+  /** Optional field size used only to select the payout schedule column. */
+  scheduleBracketEntryCount?: number;
   /** Processing / platform fee as a fraction of gross (e.g. 0.04 = 4%). */
   processingFeeFraction: number;
   /**
@@ -97,6 +103,9 @@ export type DivisionPayoutResult = {
 };
 
 export type PayoutCalculationResult = {
+  cashPayoutMode: "entry_based" | "guaranteed";
+  guaranteedCashPayoutCents: number;
+  companyFundedCashShortfallCents: number;
   bracketUsed: PayoutBracketId;
   grossPotCents: number;
   processingFeeCents: number;
@@ -159,6 +168,12 @@ export type DistancePayoutSettingsRow = {
   distance_id: string;
   /** False for prize-only races; divisions still run but no cash reaches racer wallets. */
   cash_payouts_enabled: boolean;
+  cash_payout_mode: "entry_based" | "guaranteed";
+  guaranteed_cash_payout_cents: number;
+  marketing_entry_count: number | null;
+  marketing_entry_fee_cents: number | null;
+  marketing_female_entry_count: number | null;
+  marketing_military_entry_count: number | null;
   processing_fee_fraction: number;
   shootout_fraction: number;
   pr_holding_fraction: number;

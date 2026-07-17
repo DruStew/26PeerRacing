@@ -9,6 +9,7 @@ export type PrizeSettings = {
   military_prizes_enabled: boolean;
   show_individual_retail_values: boolean;
   show_total_award_value: boolean;
+  public_awards_display: "none" | "cash" | "prizes" | "both";
   updated_at: string;
 };
 
