@@ -19,9 +19,9 @@ export type PayoutBracketId =
   | "271-300";
 
 export type PayoutCalculationInput = {
-  /** Entry-based uses the normal percentage waterfall; guaranteed fixes the main cash purse. */
+  /** Entry-based uses the normal percentage waterfall; guaranteed fixes the complete cash purse. */
   cashPayoutMode?: "entry_based" | "guaranteed";
-  /** Fixed main-division cash purse in guaranteed mode (incentives are additional). */
+  /** Fixed total cash purse in guaranteed mode; incentives come off the top. */
   guaranteedCashPayoutCents?: number;
   /** Paid entries counted toward the pot (manual or from reporting later). */
   entryCount: number;

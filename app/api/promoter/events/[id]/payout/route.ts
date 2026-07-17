@@ -301,6 +301,16 @@ export async function PUT(request: Request, ctx: { params: Promise<{ id: string 
       { status: 400 },
     );
   }
+  if (
+    cash_payouts_enabled &&
+    cash_payout_mode === "guaranteed" &&
+    female_incentive_cents + military_incentive_cents > guaranteed_cash_payout_cents
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "Female and military incentives cannot exceed the total guaranteed cash payout." },
+      { status: 400 },
+    );
+  }
 
   const row: Omit<DistancePayoutSettingsRow, "updated_at"> = {
     ...defaults,

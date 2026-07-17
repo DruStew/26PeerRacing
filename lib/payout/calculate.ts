@@ -151,22 +151,26 @@ export function calculateEventPayout(input: PayoutCalculationInput): PayoutCalcu
   let companyFundedCashShortfallCents = 0;
 
   if (cashPayoutMode === "guaranteed") {
-    const totalCashCommitment = guaranteedCashPayoutCents + reqFemale + reqMilitary;
-    companyFundedCashShortfallCents = Math.max(0, totalCashCommitment - netAfterShootoutCents);
-    prHoldingCents = Math.max(0, netAfterShootoutCents - totalCashCommitment);
-    racersPotCents = Math.min(netAfterShootoutCents, totalCashCommitment);
-    femaleAlloc = reqFemale;
-    militaryAlloc = reqMilitary;
+    companyFundedCashShortfallCents = Math.max(0, guaranteedCashPayoutCents - netAfterShootoutCents);
+    prHoldingCents = Math.max(0, netAfterShootoutCents - guaranteedCashPayoutCents);
+    racersPotCents = Math.min(netAfterShootoutCents, guaranteedCashPayoutCents);
+    femaleAlloc = Math.min(reqFemale, guaranteedCashPayoutCents);
+    militaryAlloc = Math.min(reqMilitary, guaranteedCashPayoutCents - femaleAlloc);
     trueAdded = 0;
-    contestantPoolLedgerCents = guaranteedCashPayoutCents;
-    contestantPoolCents = guaranteedCashPayoutCents;
+    contestantPoolLedgerCents = guaranteedCashPayoutCents - reqFemale - reqMilitary;
+    contestantPoolCents = guaranteedCashPayoutCents - femaleAlloc - militaryAlloc;
+    if (reqFemale + reqMilitary > guaranteedCashPayoutCents) {
+      warnings.push(
+        "Planned female + military incentives exceed the guaranteed cash purse — incentive payouts are clamped and nothing remains for main divisions.",
+      );
+    }
     if (companyFundedCashShortfallCents > 0) {
       warnings.push(
-        `Guaranteed cash commitments exceed modeled net entry revenue by $${(companyFundedCashShortfallCents / 100).toFixed(2)} — the company funds the shortfall.`,
+        `The guaranteed cash purse exceeds modeled net entry revenue by $${(companyFundedCashShortfallCents / 100).toFixed(2)} — the company funds the shortfall.`,
       );
     }
     if (input.trueAddedMoneyCents > 0) {
-      warnings.push("True added money is ignored in guaranteed mode because the fixed guarantee is the main cash commitment.");
+      warnings.push("True added money is ignored in guaranteed mode because the guarantee is the complete cash purse.");
     }
   } else {
     prHoldingCents = Math.round(netAfterShootoutCents * prHoldingFraction);

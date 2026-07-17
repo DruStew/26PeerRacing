@@ -633,8 +633,8 @@ export default async function EventPage({
                               </p>
                             ) : (
                               <p className="mt-1 text-xs text-[#1E3A5F]/70">
-                                The main cash purse is guaranteed. Female and military cash incentives shown below are
-                                additional.
+                                This is the complete guaranteed cash purse. Female and military incentives shown below
+                                come off the top before main divisions split the remainder.
                               </p>
                             )}
                             <div className="mt-3 space-y-3">

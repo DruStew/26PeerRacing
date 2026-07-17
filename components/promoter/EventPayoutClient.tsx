@@ -663,6 +663,14 @@ export function EventPayoutClient({
 
   async function save() {
     if (!form || !selectedDistanceId) return;
+    if (
+      form.cashPayoutsEnabled &&
+      form.cashPayoutMode === "guaranteed" &&
+      form.femaleIncentiveCents + form.militaryIncentiveCents > form.guaranteedCashPayoutCents
+    ) {
+      setSaveErr("Female and military incentives cannot exceed the total guaranteed cash payout.");
+      return;
+    }
     setPending(true);
     setSaveMsg(null);
     setSaveErr(null);
@@ -891,8 +899,8 @@ export function EventPayoutClient({
               </label>
               {form.cashPayoutMode === "guaranteed" ? (
                 <DollarField
-                  label="Guaranteed main cash payout"
-                  hint="Fixed main-division purse. Female/military cash incentives are additional."
+                  label="Guaranteed total cash payout"
+                  hint="Complete cash purse. Female and military incentives come off the top; main divisions split the remainder."
                   cents={form.guaranteedCashPayoutCents}
                   onChangeCents={(n) =>
                     setForm((f) => (f ? { ...f, guaranteedCashPayoutCents: n } : f))
@@ -915,7 +923,18 @@ export function EventPayoutClient({
           ) : null}
           {form.cashPayoutsEnabled && form.cashPayoutMode === "guaranteed" ? (
             <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950">
-              Public copy will advertise {fmtUsd(form.guaranteedCashPayoutCents)} as a guaranteed main cash payout.
+              Public copy will advertise {fmtUsd(form.guaranteedCashPayoutCents)} as the total guaranteed cash payout.
+              Incentives use{" "}
+              {fmtUsd(form.femaleIncentiveCents + form.militaryIncentiveCents)}, leaving{" "}
+              {fmtUsd(
+                Math.max(
+                  0,
+                  form.guaranteedCashPayoutCents -
+                    form.femaleIncentiveCents -
+                    form.militaryIncentiveCents,
+                ),
+              )}{" "}
+              for main divisions.
             </p>
           ) : null}
         </section>
@@ -928,8 +947,8 @@ export function EventPayoutClient({
           <h2 className="font-display text-lg font-semibold text-[#1E3A5F]">Fees & Splits</h2>
           {form.cashPayoutsEnabled && form.cashPayoutMode === "guaranteed" ? (
             <p className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
-              Guaranteed mode replaces the PR holding percentage: after processing, shootout, guaranteed cash, and
-              incentive commitments, the remaining revenue uses the producer/Peer Racing split below.
+              Guaranteed mode replaces the PR holding percentage: after processing and shootout, the total guaranteed
+              purse comes out once. Incentives come off that purse before main divisions split the remainder.
             </p>
           ) : null}
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -1346,7 +1365,7 @@ export function EventPayoutClient({
                 {result.cashPayoutMode === "guaranteed" ? (
                   <>
                     <div className="flex justify-between gap-4 font-semibold">
-                      <dt>Guaranteed main cash payout</dt>
+                      <dt>Guaranteed total cash payout</dt>
                       <dd>{fmtUsd(result.guaranteedCashPayoutCents)}</dd>
                     </div>
                     {result.companyFundedCashShortfallCents > 0 ? (
