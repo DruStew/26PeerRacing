@@ -67,9 +67,12 @@ export function CheckpointBoard({ eventId }: { eventId: string }) {
   }, [eventId]);
 
   useEffect(() => {
-    void load();
+    const initial = window.setTimeout(() => void load(), 0);
     const t = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(t);
+    return () => {
+      window.clearTimeout(initial);
+      clearInterval(t);
+    };
   }, [load]);
 
   if (error) {

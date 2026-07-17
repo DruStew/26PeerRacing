@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { formatTierPriceUsd } from "@/lib/membership-tier-config";
 import { DEFAULT_PUBLIC_ROUTE, MEMBERSHIP_ACCOUNT_ROUTE } from "@/lib/routes";
@@ -54,11 +54,7 @@ export function MembershipTierPicker({
   const router = useRouter();
   const [status, setStatus] = useState<"idle" | "loading">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [noticeTier, setNoticeTier] = useState<string | null>(highlightTierSlug ?? null);
-
-  useEffect(() => {
-    setNoticeTier(highlightTierSlug ?? null);
-  }, [highlightTierSlug]);
+  const noticeTier = highlightTierSlug ?? null;
 
   const currentRank = tiers.find((t) => t.slug === currentTierSlug)?.rank ?? -1;
   const featuredSlug =

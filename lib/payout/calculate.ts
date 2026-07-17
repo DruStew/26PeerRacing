@@ -28,7 +28,7 @@ export function distributeCentsByWeights(totalCents: number, weights: number[]):
   if (sum <= 0 || totalCents <= 0) return weights.map(() => 0);
   const exact = weights.map((w) => (totalCents * w) / sum);
   const floors = exact.map((x) => Math.floor(x));
-  let remainder = totalCents - floors.reduce((a, b) => a + b, 0);
+  const remainder = totalCents - floors.reduce((a, b) => a + b, 0);
   const order = exact
     .map((x, i) => ({ i, frac: x - Math.floor(x) }))
     .sort((a, b) => b.frac - a.frac);

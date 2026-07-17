@@ -81,10 +81,11 @@ export function BigScreenClient({
   const [feed, setFeed] = useState<Feed | null>(null);
   const [denied, setDenied] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const offsetRef = useRef(0);
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const seenFinishersRef = useRef<Set<string> | null>(null);
   const [popQueue, setPopQueue] = useState<LiveFinisher[]>([]);
   const [activePop, setActivePop] = useState<LiveFinisher | null>(null);
+  const popHideTimerRef = useRef<number | null>(null);
   const [rotateIndex, setRotateIndex] = useState(0);
 
   // ---- polling -------------------------------------------------------------
@@ -99,7 +100,7 @@ export function BigScreenClient({
       const json = (await res.json()) as Feed & { ok: boolean; server_ms: number };
       if (!json.ok) return;
       setDenied(false);
-      offsetRef.current = json.server_ms - Date.now();
+      setServerOffsetMs(json.server_ms - Date.now());
 
       // Celebration pops: any finisher we haven't seen yet.
       if (seenFinishersRef.current === null) {
@@ -119,10 +120,11 @@ export function BigScreenClient({
   }, [eventId]);
 
   useEffect(() => {
-    void poll();
+    const initial = window.setTimeout(() => void poll(), 0);
     const t = window.setInterval(() => void poll(), POLL_MS);
     const tick = window.setInterval(() => setNow(Date.now()), 100);
     return () => {
+      window.clearTimeout(initial);
       window.clearInterval(t);
       window.clearInterval(tick);
     };
@@ -148,11 +150,23 @@ export function BigScreenClient({
   useEffect(() => {
     if (activePop || popQueue.length === 0) return;
     const [next, ...rest] = popQueue;
-    setActivePop(next);
-    setPopQueue(rest);
-    const t = window.setTimeout(() => setActivePop(null), POP_MS);
-    return () => window.clearTimeout(t);
+    const start = window.setTimeout(() => {
+      setActivePop(next);
+      setPopQueue(rest);
+      popHideTimerRef.current = window.setTimeout(() => {
+        popHideTimerRef.current = null;
+        setActivePop(null);
+      }, POP_MS);
+    }, 0);
+    return () => window.clearTimeout(start);
   }, [activePop, popQueue]);
+
+  useEffect(
+    () => () => {
+      if (popHideTimerRef.current !== null) window.clearTimeout(popHideTimerRef.current);
+    },
+    [],
+  );
 
   // ---- rotation -----------------------------------------------------------------
   useEffect(() => {
@@ -161,7 +175,7 @@ export function BigScreenClient({
     return () => window.clearInterval(t);
   }, [rotateSeconds]);
 
-  const serverNow = now + offsetRef.current;
+  const serverNow = now + serverOffsetMs;
 
   const distances = useMemo(() => {
     const all = feed?.distances ?? [];
@@ -169,7 +183,7 @@ export function BigScreenClient({
   }, [feed, distanceFilter]);
 
   // Countdown takeover: nearest future gun within 60s.
-  const countdown = useMemo(() => {
+  const countdown = (() => {
     for (const d of distances) {
       if (d.gun_at_ms !== null && d.gun_at_ms > serverNow && d.gun_at_ms - serverNow < 60_000) {
         return { distance: d, msLeft: d.gun_at_ms - serverNow };
@@ -180,7 +194,7 @@ export function BigScreenClient({
       }
     }
     return null;
-  }, [distances, serverNow]);
+  })();
 
   if (denied) {
     return (

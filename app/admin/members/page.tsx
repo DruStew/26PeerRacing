@@ -185,6 +185,7 @@ export default async function AdminMembersPage({
                 </div>
                 <div className="w-full shrink-0 lg:max-w-sm">
                   <MemberAccountEditor
+                    key={`${id}:${memberTier}:${initial.superAdmin}:${initial.admin}:${initial.promoter}:${initial.booth}`}
                     userId={id}
                     canManagePrivilegedRoles={admin.isSuperAdmin}
                     initialRoles={initial}

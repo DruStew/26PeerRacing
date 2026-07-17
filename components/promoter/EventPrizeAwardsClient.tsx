@@ -392,7 +392,7 @@ export function EventPrizeAwardsClient({
                   ) : null}
                   <div className="mt-3 space-y-3">
                     {atPlace.rules.map((rule, ruleIndex) => (
-                      <div key={`${place}-${ruleIndex}-${rule.prize_name}`} className="grid gap-2 rounded-lg bg-white p-3 ring-1 ring-[#1E3A5F]/10 sm:grid-cols-[1fr_9rem_9rem_auto]">
+                      <div key={`${place}-${rule.id ?? `new-${ruleIndex}`}`} className="grid gap-2 rounded-lg bg-white p-3 ring-1 ring-[#1E3A5F]/10 sm:grid-cols-[1fr_9rem_9rem_auto]">
                         <input
                           className={inputClass}
                           aria-label="Prize name"

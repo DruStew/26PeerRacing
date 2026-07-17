@@ -207,9 +207,9 @@ export default async function EventPage({
 
   const entriesOpenAtRaw = (event as { entries_open_at?: string | null }).entries_open_at ?? null;
   const registrationOpensAt = (() => {
-    if (!entriesOpenAtRaw) return null;
+    if (!entriesOpenAtRaw || entryStatus !== "not_yet_open") return null;
     const d = new Date(entriesOpenAtRaw);
-    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return null;
+    if (Number.isNaN(d.getTime())) return null;
     return d;
   })();
 

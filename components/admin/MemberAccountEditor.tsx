@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
 import { saveMemberAccountSettings } from "@/app/admin/members/actions";
 import type { ManageableRole } from "@/lib/admin/member-roles";
@@ -86,12 +86,6 @@ export function MemberAccountEditor({
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
     null,
   );
-
-  useEffect(() => {
-    setRoles(initialRoles);
-    setTier(initialTier);
-    setMessage(null);
-  }, [initialRoles, initialTier, userId]);
 
   const dirty = tier !== initialTier || rolesDirty(roles, initialRoles);
   const hasPlatformRole = roles.superAdmin || roles.admin || roles.promoter || roles.booth;
