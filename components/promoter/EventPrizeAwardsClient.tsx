@@ -40,7 +40,7 @@ const defaultSettings: SettingsForm = {
   military: false,
   showIndividualValues: false,
   showTotalValue: true,
-  publicAwardsDisplay: "none",
+  publicAwardsDisplay: "both",
 };
 
 function dollarsToCents(raw: string): number {
@@ -195,6 +195,7 @@ export function EventPrizeAwardsClient({
   }
 
   function addPrize(place: number) {
+    setSettings((value) => ({ ...value, [enabledKey(category)]: true }));
     const current = rulesAt(place);
     const base = current.inherited ? current.rules.map((rule) => ({ ...rule, id: undefined })) : current.rules;
     replacePlace(place, [
