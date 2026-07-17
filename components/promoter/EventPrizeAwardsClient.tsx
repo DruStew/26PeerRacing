@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PrizeCategory, PrizeRule, PrizeSettings } from "@/lib/prizes/types";
 
@@ -67,6 +67,7 @@ export function EventPrizeAwardsClient({
   const [category, setCategory] = useState<PrizeCategory>("main");
   const [division, setDivision] = useState<string>("");
   const [places, setPlaces] = useState(3);
+  const placesContextRef = useRef("");
   const [publishedAt, setPublishedAt] = useState<string | null>(null);
   const [fulfillmentAwards, setFulfillmentAwards] = useState<FulfillmentAward[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +103,7 @@ export function EventPrizeAwardsClient({
             }
           : defaultSettings,
       );
+      placesContextRef.current = "";
       setRules(json.rules ?? []);
       setPublishedAt(json.resultsPublishedAt ?? null);
       if (json.resultsPublishedAt) {
@@ -129,6 +131,9 @@ export function EventPrizeAwardsClient({
   }, [load]);
 
   useEffect(() => {
+    const context = `${distanceId}:${category}:${division}`;
+    if (placesContextRef.current === context) return;
+    placesContextRef.current = context;
     const maxPlace = rules
       .filter(
         (rule) =>
@@ -137,7 +142,7 @@ export function EventPrizeAwardsClient({
       )
       .reduce((max, rule) => Math.max(max, rule.place), 0);
     setPlaces(Math.max(1, maxPlace || 3));
-  }, [category, division, rules]);
+  }, [category, distanceId, division, rules]);
 
   const rulesAt = useCallback(
     (place: number) => {
