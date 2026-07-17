@@ -16,17 +16,21 @@ async function gate(eventId: string, distanceId: string, supabase: SupabaseClien
   }
   const { data: distance } = await supabase
     .from("distances")
-    .select("id,event_id,results_published_at,events!inner(promoter_id)")
+    .select("id,event_id,results_published_at")
     .eq("id", distanceId)
     .eq("event_id", eventId)
     .maybeSingle();
   if (!distance) {
     return { ok: false as const, response: NextResponse.json({ ok: false, error: "Distance not found" }, { status: 404 }) };
   }
-  const promoterId = (
-    distance as unknown as { events: { promoter_id: string }; results_published_at: string | null }
-  ).events.promoter_id;
-  const { data: admin } = await supabase.from("roles").select("role").eq("user_id", uid).eq("role", "admin").maybeSingle();
+  const [{ data: event }, { data: admin }] = await Promise.all([
+    supabase.from("events").select("promoter_id").eq("id", eventId).maybeSingle(),
+    supabase.from("roles").select("role").eq("user_id", uid).eq("role", "admin").maybeSingle(),
+  ]);
+  if (!event) {
+    return { ok: false as const, response: NextResponse.json({ ok: false, error: "Event not found" }, { status: 404 }) };
+  }
+  const promoterId = (event as { promoter_id: string }).promoter_id;
   if (promoterId !== uid && !admin) {
     return { ok: false as const, response: NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 }) };
   }
