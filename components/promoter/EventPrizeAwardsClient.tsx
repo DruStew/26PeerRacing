@@ -232,9 +232,24 @@ export function EventPrizeAwardsClient({
           rules: cleanRules,
         }),
       });
-      const json = (await response.json()) as { ok?: boolean; error?: string; requiresRepublish?: boolean };
+      const json = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        requiresRepublish?: boolean;
+        settings?: PrizeSettings | null;
+        rules?: PrizeRule[];
+      };
       if (!response.ok || !json.ok) throw new Error(json.error ?? "Save failed");
       setRules(cleanRules);
+      window.dispatchEvent(
+        new CustomEvent("peer-racing:prizes-saved", {
+          detail: {
+            distanceId,
+            settings: json.settings ?? null,
+            rules: json.rules ?? cleanRules,
+          },
+        }),
+      );
       setMessage(
         json.requiresRepublish
           ? "Saved. Results are still showing the previous prizes—re-publish them from the Results Console."

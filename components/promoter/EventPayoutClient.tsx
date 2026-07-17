@@ -39,6 +39,12 @@ import {
 } from "@/lib/payout";
 import { calculateNumDivisions, calculateNumPayoutSlots } from "@/lib/algorithm";
 import type { DistancePayoutSettingsRow, PayoutBracketId, PayoutCalculationInput } from "@/lib/payout/types";
+import {
+  rulesForPlacement,
+  type PrizeCategory,
+  type PrizeRule,
+  type PrizeSettings,
+} from "@/lib/prizes/types";
 
 function fmtUsd(cents: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
@@ -56,6 +62,67 @@ function LedgerDd({ cents }: { cents: number }) {
     >
       {fmtUsd(cents)}
     </dd>
+  );
+}
+
+function maxPrizePlace(
+  rules: PrizeRule[],
+  category: PrizeCategory,
+  division: string,
+): number {
+  let max = 0;
+  for (let place = 1; place <= SCHEDULE_PLACES_TO_PAY; place++) {
+    if (rulesForPlacement(rules, category, division, place).length > 0) max = place;
+  }
+  return max;
+}
+
+function DivisionAwardLines({
+  category,
+  division,
+  cashPlaces,
+  prizeRules,
+  prizesEnabled,
+}: {
+  category: PrizeCategory;
+  division: string;
+  cashPlaces: Array<{ place: number; amountCents: number }>;
+  prizeRules: PrizeRule[];
+  prizesEnabled: boolean;
+}) {
+  const lines = Array.from({ length: SCHEDULE_PLACES_TO_PAY }, (_, index) => {
+    const place = index + 1;
+    const cash = cashPlaces.find((item) => item.place === place)?.amountCents ?? 0;
+    const prizes = prizesEnabled ? rulesForPlacement(prizeRules, category, division, place) : [];
+    return { place, cash, prizes };
+  }).filter((line) => line.cash > 0 || line.prizes.length > 0);
+
+  if (lines.length === 0) {
+    return <p className="mt-3 text-xs text-[#1E3A5F]/50">No cash or physical prizes configured.</p>;
+  }
+
+  return (
+    <ul className="mt-3 divide-y divide-[#1E3A5F]/10 text-sm">
+      {lines.map((line) => (
+        <li key={line.place} className="grid grid-cols-[5rem_1fr] gap-2 py-2">
+          <span className="text-[#1E3A5F]/80">{line.place} place</span>
+          <span className="text-right">
+            {line.cash > 0 ? (
+              <span className="block font-semibold text-[#1E3A5F]">{fmtUsd(line.cash)} cash</span>
+            ) : null}
+            {line.prizes.map((prize) => (
+              <span key={`${prize.id ?? prize.sort_order}-${prize.prize_name}`} className="block text-xs text-[#E87722]">
+                {prize.prize_name}
+                <span className="text-[#1E3A5F]/55">
+                  {" "}
+                  · cost {fmtUsd(prize.cost_cents)} · retail {fmtUsd(prize.retail_value_cents)}
+                </span>
+              </span>
+            ))}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -384,17 +451,26 @@ export function EventPayoutClient({
   const [checkedInMilitaryCount, setCheckedInMilitaryCount] = useState(0);
   const [femaleEntryCount, setFemaleEntryCount] = useState(0);
   const [militaryEntryCount, setMilitaryEntryCount] = useState(0);
+  const [prizeSettings, setPrizeSettings] = useState<PrizeSettings | null>(null);
+  const [prizeRules, setPrizeRules] = useState<PrizeRule[]>([]);
 
   const loadDistance = useCallback(async () => {
     if (!selectedDistanceId) {
       setForm(null);
+      setPrizeSettings(null);
+      setPrizeRules([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     setLoadError(null);
+    setPrizeSettings(null);
+    setPrizeRules([]);
     try {
-      const res = await fetch(`/api/promoter/events/${eventId}/payout?distanceId=${encodeURIComponent(selectedDistanceId)}`);
+      const [res, prizeRes] = await Promise.all([
+        fetch(`/api/promoter/events/${eventId}/payout?distanceId=${encodeURIComponent(selectedDistanceId)}`),
+        fetch(`/api/promoter/events/${eventId}/prizes?distanceId=${encodeURIComponent(selectedDistanceId)}`),
+      ]);
       const json = (await res.json()) as {
         ok?: boolean;
         error?: string;
@@ -408,6 +484,11 @@ export function EventPayoutClient({
         checkedInMilitaryCount?: number;
         femaleEntryCount?: number;
         militaryEntryCount?: number;
+      };
+      const prizeJson = (await prizeRes.json()) as {
+        ok?: boolean;
+        settings?: PrizeSettings | null;
+        rules?: PrizeRule[];
       };
       if (!res.ok || !json.ok) {
         setLoadError(json.error ?? "Could not load payout data");
@@ -434,6 +515,13 @@ export function EventPayoutClient({
           json.militaryEntryCount ?? 0,
         ),
       );
+      if (prizeRes.ok && prizeJson.ok) {
+        setPrizeSettings(prizeJson.settings ?? null);
+        setPrizeRules(prizeJson.rules ?? []);
+      } else {
+        setPrizeSettings(null);
+        setPrizeRules([]);
+      }
     } catch {
       setLoadError("Network error");
       setForm(null);
@@ -445,6 +533,23 @@ export function EventPayoutClient({
   useEffect(() => {
     void loadDistance();
   }, [loadDistance]);
+
+  useEffect(() => {
+    const receiveSavedPrizes = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          distanceId: string;
+          settings: PrizeSettings | null;
+          rules: PrizeRule[];
+        }>
+      ).detail;
+      if (!detail || detail.distanceId !== selectedDistanceId) return;
+      setPrizeSettings(detail.settings);
+      setPrizeRules(detail.rules);
+    };
+    window.addEventListener("peer-racing:prizes-saved", receiveSavedPrizes);
+    return () => window.removeEventListener("peer-racing:prizes-saved", receiveSavedPrizes);
+  }, [selectedDistanceId]);
 
   const result = useMemo(
     () =>
@@ -465,6 +570,69 @@ export function EventPayoutClient({
       countPlaces(result.militaryIncentiveDivisions)
     );
   }, [result]);
+
+  const plannedPrizeTotals = useMemo(() => {
+    if (!form || !prizeSettings) return { costCents: 0, retailValueCents: 0, awardCount: 0 };
+    const categoryDivisions = [
+      {
+        enabled: prizeSettings.main_prizes_enabled,
+        category: "main" as const,
+        labels: divisionLabelsForCount(form.divisionCount),
+      },
+      {
+        enabled: prizeSettings.female_prizes_enabled,
+        category: "female" as const,
+        labels: divisionLabelsForCount(form.femaleIncentiveDivisionCount),
+      },
+      {
+        enabled: prizeSettings.military_prizes_enabled,
+        category: "military" as const,
+        labels: divisionLabelsForCount(form.militaryIncentiveDivisionCount),
+      },
+    ];
+    let costCents = 0;
+    let retailValueCents = 0;
+    let awardCount = 0;
+    for (const group of categoryDivisions) {
+      if (!group.enabled) continue;
+      for (const division of group.labels) {
+        for (let place = 1; place <= SCHEDULE_PLACES_TO_PAY; place++) {
+          for (const prize of rulesForPlacement(prizeRules, group.category, division, place)) {
+            costCents += prize.cost_cents;
+            retailValueCents += prize.retail_value_cents;
+            awardCount += 1;
+          }
+        }
+      }
+    }
+    return { costCents, retailValueCents, awardCount };
+  }, [form, prizeRules, prizeSettings]);
+
+  const femaleAwardDivisions = useMemo(() => {
+    if (!result || !form) return [];
+    if (result.femaleIncentiveDivisions.length > 0) return result.femaleIncentiveDivisions;
+    if (!prizeSettings?.female_prizes_enabled || !prizeRules.some((rule) => rule.category === "female")) return [];
+    return divisionLabelsForCount(form.femaleIncentiveDivisionCount).map((label, index) => ({
+      index,
+      label,
+      poolCents: 0,
+      places: [] as Array<{ place: number; amountCents: number }>,
+      placesPaidTotalCents: 0,
+    }));
+  }, [form, prizeRules, prizeSettings?.female_prizes_enabled, result]);
+
+  const militaryAwardDivisions = useMemo(() => {
+    if (!result || !form) return [];
+    if (result.militaryIncentiveDivisions.length > 0) return result.militaryIncentiveDivisions;
+    if (!prizeSettings?.military_prizes_enabled || !prizeRules.some((rule) => rule.category === "military")) return [];
+    return divisionLabelsForCount(form.militaryIncentiveDivisionCount).map((label, index) => ({
+      index,
+      label,
+      poolCents: 0,
+      places: [] as Array<{ place: number; amountCents: number }>,
+      placesPaidTotalCents: 0,
+    }));
+  }, [form, prizeRules, prizeSettings?.military_prizes_enabled, result]);
 
   const autoScheduleColumn = useMemo(
     () => (form ? entryCountToBracket(form.entryCount) : "<10"),
@@ -1189,6 +1357,33 @@ export function EventPayoutClient({
                     ) : null}
                   </>
                 ) : null}
+                {plannedPrizeTotals.awardCount > 0 ? (
+                  <>
+                    <div className="flex justify-between gap-4 border-t border-[#E87722]/20 pt-2 font-semibold text-[#E87722]">
+                      <dt>Planned physical-prize cost</dt>
+                      <dd>{fmtUsd(plannedPrizeTotals.costCents)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4 text-[#E87722]">
+                      <dt>Advertised prize retail value</dt>
+                      <dd>{fmtUsd(plannedPrizeTotals.retailValueCents)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-4 border-b border-[#E87722]/20 pb-2 font-semibold text-[#1E3A5F]">
+                      <dt>Total company award commitment</dt>
+                      <dd>
+                        {fmtUsd(
+                          result.totalContestantPayoutsCents +
+                            result.femaleIncentiveCents +
+                            result.militaryIncentiveCents +
+                            plannedPrizeTotals.costCents,
+                        )}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4 text-xs text-[#1E3A5F]/60">
+                      <dt>Physical awards planned</dt>
+                      <dd>{plannedPrizeTotals.awardCount}</dd>
+                    </div>
+                  </>
+                ) : null}
                 <div className="flex justify-between gap-4">
                   <dt>Less female incentive (planned)</dt>
                   <LedgerDd cents={-result.femaleIncentiveRequestedCents} />
@@ -1252,26 +1447,27 @@ export function EventPayoutClient({
                 <p className="font-display text-base font-semibold text-[#1E3A5F]">{d.label}</p>
                 <p className="mt-1 text-xs text-[#1E3A5F]/60">
                   Division pool {fmtUsd(d.poolCents)} · Paid out {fmtUsd(d.placesPaidTotalCents)}
+                  {prizeSettings?.main_prizes_enabled &&
+                  maxPrizePlace(prizeRules, "main", d.label) > 0
+                    ? ` · Prizes through ${maxPrizePlace(prizeRules, "main", d.label)} place`
+                    : ""}
                 </p>
-                <ul className="mt-3 divide-y divide-[#1E3A5F]/10 text-sm">
-                  {d.places
-                    .filter((p) => p.amountCents > 0)
-                    .map((p) => (
-                      <li key={p.place} className="flex justify-between gap-2 py-1.5">
-                        <span className="text-[#1E3A5F]/80">{p.place} place</span>
-                        <span className="font-medium text-[#1E3A5F]">{fmtUsd(p.amountCents)}</span>
-                      </li>
-                    ))}
-                </ul>
+                <DivisionAwardLines
+                  category="main"
+                  division={d.label}
+                  cashPlaces={d.places}
+                  prizeRules={prizeRules}
+                  prizesEnabled={prizeSettings?.main_prizes_enabled === true}
+                />
               </div>
             ))}
 
-            {result.femaleIncentiveDivisions.length > 0 ? (
+            {femaleAwardDivisions.length > 0 ? (
               <>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1E3A5F]/55">
                   Female incentive (by division)
                 </p>
-                {result.femaleIncentiveDivisions.map((d) => (
+                {femaleAwardDivisions.map((d) => (
                   <div
                     key={`f-${d.index}`}
                     className="rounded-xl border border-pink-200/80 bg-white p-5 shadow-sm"
@@ -1280,27 +1476,24 @@ export function EventPayoutClient({
                     <p className="mt-1 text-xs text-[#1E3A5F]/60">
                       Pool {fmtUsd(d.poolCents)} · Paid out {fmtUsd(d.placesPaidTotalCents)}
                     </p>
-                    <ul className="mt-3 divide-y divide-[#1E3A5F]/10 text-sm">
-                      {d.places
-                        .filter((p) => p.amountCents > 0)
-                        .map((p) => (
-                          <li key={p.place} className="flex justify-between gap-2 py-1.5">
-                            <span className="text-[#1E3A5F]/80">{p.place} place</span>
-                            <span className="font-medium text-[#1E3A5F]">{fmtUsd(p.amountCents)}</span>
-                          </li>
-                        ))}
-                    </ul>
+                    <DivisionAwardLines
+                      category="female"
+                      division={d.label}
+                      cashPlaces={d.places}
+                      prizeRules={prizeRules}
+                      prizesEnabled={prizeSettings?.female_prizes_enabled === true}
+                    />
                   </div>
                 ))}
               </>
             ) : null}
 
-            {result.militaryIncentiveDivisions.length > 0 ? (
+            {militaryAwardDivisions.length > 0 ? (
               <>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1E3A5F]/55">
                   Military incentive (by division)
                 </p>
-                {result.militaryIncentiveDivisions.map((d) => (
+                {militaryAwardDivisions.map((d) => (
                   <div
                     key={`m-${d.index}`}
                     className="rounded-xl border border-slate-300/90 bg-white p-5 shadow-sm"
@@ -1309,16 +1502,13 @@ export function EventPayoutClient({
                     <p className="mt-1 text-xs text-[#1E3A5F]/60">
                       Pool {fmtUsd(d.poolCents)} · Paid out {fmtUsd(d.placesPaidTotalCents)}
                     </p>
-                    <ul className="mt-3 divide-y divide-[#1E3A5F]/10 text-sm">
-                      {d.places
-                        .filter((p) => p.amountCents > 0)
-                        .map((p) => (
-                          <li key={p.place} className="flex justify-between gap-2 py-1.5">
-                            <span className="text-[#1E3A5F]/80">{p.place} place</span>
-                            <span className="font-medium text-[#1E3A5F]">{fmtUsd(p.amountCents)}</span>
-                          </li>
-                        ))}
-                    </ul>
+                    <DivisionAwardLines
+                      category="military"
+                      division={d.label}
+                      cashPlaces={d.places}
+                      prizeRules={prizeRules}
+                      prizesEnabled={prizeSettings?.military_prizes_enabled === true}
+                    />
                   </div>
                 ))}
               </>
