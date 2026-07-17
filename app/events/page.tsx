@@ -371,7 +371,7 @@ export default async function EventsPage({
                                   return (
                                     <div
                                       key={d.id}
-                                      className="w-80 shrink-0 rounded-lg border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-2 text-xs text-[#1E3A5F]/90 sm:text-sm"
+                                      className="w-80 max-w-[calc(100vw-5rem)] shrink-0 rounded-lg border border-[#1E3A5F]/10 bg-[#1E3A5F]/5 px-3 py-2 text-xs text-[#1E3A5F]/90 sm:text-sm"
                                     >
                                       <div className="flex items-center gap-1.5">
                                         <span className="font-medium">
